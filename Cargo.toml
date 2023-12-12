@@ -6,3 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+hex = "0.4.3"
+num-bigint = "0.4.4"
+sync_vm = { path = "../zksync/era-sync_vm/" }
+pairing = { package = "pairing_ce", version = "0.28.5" }

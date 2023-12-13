@@ -1,7 +1,9 @@
+use num_bigint::BigUint;
 use pairing::{
     ff::{PrimeField, ScalarEngine},
     Engine,
 };
+use std::str::FromStr;
 use sync_vm::{
     circuit_structures::byte::Byte,
     franklin_crypto::{
@@ -23,10 +25,41 @@ pub fn bytes_be_to_num<CS: ConstraintSystem<E>, E: Engine>(
     uint.to_num_unchecked(cs)
 }
 
-fn bytes_to_hex<E: Engine>(bytes: &[Byte<E>]) -> String {
+pub fn bytes_to_hex<E: Engine>(bytes: &[Byte<E>]) -> String {
     let bbs = bytes
         .iter()
         .map(|b| b.get_byte_value().unwrap())
         .collect::<Vec<_>>();
     hex::encode(bbs)
+}
+
+pub fn uint256_and_u8_chunks_from_str<E: Engine, CS: ConstraintSystem<E>>(
+    cs: &mut CS,
+    str: &str,
+) -> Result<(UInt256<E>, [Num<E>; 32]), SynthesisError> {
+    let biguint = BigUint::from_str(str).map_err(|e| {
+        let err = std::io::Error::new(std::io::ErrorKind::Other, e);
+        SynthesisError::from(err)
+    })?;
+    UInt256::alloc_from_biguint_and_return_u8_chunks(cs, Some(biguint))
+}
+
+pub fn uint256_from_str<E: Engine, CS: ConstraintSystem<E>>(
+    cs: &mut CS,
+    str: &str,
+) -> Result<UInt256<E>, SynthesisError> {
+    Ok(uint256_and_u8_chunks_from_str(cs, str)?.0)
+}
+
+pub fn uint256_from_be_hex_str<E: Engine, CS: ConstraintSystem<E>>(
+    cs: &mut CS,
+    str: &str,
+) -> Result<UInt256<E>, SynthesisError> {
+    let bytes = hex::decode(str)
+        .unwrap()
+        .into_iter()
+        .map(|b| Byte::constant(b))
+        .collect::<Vec<_>>();
+    let bytes: [Byte<E>; 32] = bytes.try_into().unwrap();
+    UInt256::from_be_bytes_fixed(cs, &bytes)
 }

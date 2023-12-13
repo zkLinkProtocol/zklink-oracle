@@ -1,10 +1,4 @@
-use num_bigint::BigUint;
 use sync_vm::circuit_structures::byte::IntoBytes as _;
-use sync_vm::franklin_crypto::bellman::plonk::better_better_cs::cs::Circuit;
-use sync_vm::franklin_crypto::bellman::plonk::better_better_cs::data_structures::PolyIdentifier;
-use sync_vm::franklin_crypto::bellman::plonk::better_better_cs::gates::selector_optimized_with_d_next::SelectorOptimizedWidth4MainGateWithDNext;
-use sync_vm::franklin_crypto::bellman::plonk::better_better_cs::lookup_tables::LookupTableApplication;
-use sync_vm::franklin_crypto::plonk::circuit::tables::inscribe_default_range_table_for_bit_width_over_first_three_columns;
 use sync_vm::secp256k1::fq::Fq as Secp256Fq;
 use sync_vm::secp256k1::fr::Fr as Secp256Fr;
 use sync_vm::{
@@ -38,17 +32,13 @@ use sync_vm::{
 fn uint256_inner<E: Engine, CS: ConstraintSystem<E>>(
     cs: &mut CS,
     uint256: &UInt256<E>,
-) -> [UInt64<E>; 4] {
-    let bytes = uint256
-        .into_le_bytes(cs)
-        .unwrap()
-        .into_iter()
-        .collect::<Vec<_>>();
+) -> Result<[UInt64<E>; 4], SynthesisError> {
+    let bytes = uint256.into_le_bytes(cs)?.into_iter().collect::<Vec<_>>();
     let mut inner: [UInt64<E>; 4] = [UInt64::zero(); 4];
     for (i, b) in bytes.chunks_exact(8).enumerate() {
-        inner[i] = UInt64::from_bytes_le(cs, b.try_into().unwrap()).unwrap();
+        inner[i] = UInt64::from_bytes_le(cs, b.try_into().unwrap())?;
     }
-    inner
+    Ok(inner)
 }
 
 fn convert_uint256_to_field_element<'a, E: Engine, F: PrimeField, CS: ConstraintSystem<E>>(
@@ -57,7 +47,7 @@ fn convert_uint256_to_field_element<'a, E: Engine, F: PrimeField, CS: Constraint
     rns_strategy: &'a RnsParameters<E, F>,
     exceptions: &mut Vec<Boolean>,
 ) -> Result<FieldElement<'a, E, F>, SynthesisError> {
-    let raw_limbs = uint256_inner(cs, elem)
+    let raw_limbs = uint256_inner(cs, elem)?
         .into_iter()
         .map(|x| x.inner)
         .collect::<Vec<Num<E>>>();
@@ -75,7 +65,7 @@ const SECP_B_COEF: u64 = 7;
 const EXCEPTION_FLAGS_ARR_LEN: usize = 4;
 const X_POWERS_ARR_LEN: usize = 256;
 
-fn ecrecover_precompile_inner_routine<'a, E: Engine, CS: ConstraintSystem<E>>(
+pub fn ecrecover<'a, E: Engine, CS: ConstraintSystem<E>>(
     cs: &mut CS,
     recid: &UInt32<E>,
     r_as_u64x4: &UInt256<E>,
@@ -151,7 +141,7 @@ fn ecrecover_precompile_inner_routine<'a, E: Engine, CS: ConstraintSystem<E>>(
     exception_flags.push(is_in_range.not());
     // let raw_x_limbs = x_as_u64x4
     //     .inner
-    let raw_x_limbs = uint256_inner(cs, &x_as_u64x4)
+    let raw_x_limbs = uint256_inner(cs, &x_as_u64x4)?
         .into_iter()
         .map(|x| x.inner)
         .collect::<Vec<Num<E>>>();
@@ -385,177 +375,70 @@ fn ecrecover_precompile_inner_routine<'a, E: Engine, CS: ConstraintSystem<E>>(
     let x_uint256 = convert_bytes_to_uint256(cs, &q_x_chunks_be[..], &any_exception.not())?;
     let y_uint256 = convert_bytes_to_uint256(cs, &q_y_chunks_be[..], &any_exception.not())?;
 
-    // let it = q_x_chunks_be.into_iter().chain(q_y_chunks_be.into_iter());
-    // let it_bytes = it
-    //     .map(|el| el.get_byte_value())
-    //     .filter(|el| el.is_some())
-    //     .map(|el| el.unwrap())
+    // let pubkey_bytes = q_x_chunks_be
+    //     .into_iter()
+    //     .chain(q_y_chunks_be.into_iter())
     //     .collect::<Vec<_>>();
-    // println!("it_bytes len is: {:?}", it_bytes.len());
-    // println!("it_bytes: {:}", hex::encode(&it_bytes[..]));
 
     Ok((any_exception.not(), (x_uint256, y_uint256)))
 }
 
-#[test]
-fn test_ecdsa_circuit() {
-    use pairing::bn256::{Bn256, Fr};
-    use sync_vm::franklin_crypto::bellman::{
-        kate_commitment::{Crs, CrsForMonomialForm},
-        plonk::better_better_cs::{
-            cs::{
-                Circuit, PlonkCsWidth4WithNextStepParams, ProvingAssembly, SetupAssembly,
-                Width4MainGateWithDNext,
-            },
-            setup::VerificationKey,
-            verifier::verify,
-        },
-        worker::Worker,
+#[cfg(test)]
+mod tests {
+    use sync_vm::{
+        franklin_crypto::{bellman::SynthesisError, plonk::circuit::boolean::Boolean},
+        vm::primitives::{uint256::UInt256, UInt32},
     };
 
-    let circuit = TestCircuit::<Bn256> {
-        _marker: std::marker::PhantomData,
-    };
+    use crate::gadgets::{testing::create_test_constraint_system, utils::uint256_from_be_hex_str};
 
-    let worker = Worker::new();
-
-    let (setup, crs) = {
-        let mut assembly = SetupAssembly::<
-            Bn256,
-            PlonkCsWidth4WithNextStepParams,
-            SelectorOptimizedWidth4MainGateWithDNext,
-        >::new();
-        circuit.synthesize(&mut assembly).expect("must work");
-        println!("circuit contains {} gates", assembly.n());
-        assert!(assembly.is_satisfied());
-        assembly.finalize();
-        println!("Setup finalize Done");
-        // Generate CRS
-        // WARN: in production environment, CRS shouldn't be generated on the fly but rather downloaed from trusted sourcde.
-        let crs_mons = {
-            // let size = assembly.n().next_power_of_two();
-            // println!("power of CRS size = {}", size);
-            // Crs::<Bn256, CrsForMonomialForm>::crs_42(size, &worker)
-            let file = std::fs::File::open("crs.txt").unwrap();
-            Crs::<Bn256, CrsForMonomialForm>::read(file).unwrap()
-        };
-        // let mut file = std::fs::File::create("crs.txt").unwrap();
-        // crs_mons.write(file).unwrap();
-        println!("Load CRS Done");
-        let setup = assembly
-            .create_setup::<TestCircuit<Bn256>>(&worker)
-            .unwrap();
-        println!("Creating setup Done");
-        (setup, crs_mons)
-    };
-    println!("Setup Done");
-    use sync_vm::franklin_crypto::bellman::plonk::commitments::transcript::keccak_transcript::RollingKeccakTranscript;
-
-    // Prove: generate proof
-    let proof = {
-        let mut assembly = ProvingAssembly::<
-            Bn256,
-            PlonkCsWidth4WithNextStepParams,
-            SelectorOptimizedWidth4MainGateWithDNext,
-        >::new();
-        circuit.synthesize(&mut assembly).expect("must work");
-        println!("Proof synthesize Done");
-        assert!(assembly.is_satisfied());
-        assembly.finalize();
-        println!("Proof finalize Done");
-        // assembly
-        //     // .create_proof::<SimpleCircuit<Bn256>, RollingKeccakTranscript<Fr>>(
-        //     .create_proof::<_, RollingKeccakTranscript<Fr>>(&worker, &setup, &crs, None)
-        //     .unwrap()
-    };
-    println!("Proof Done");
-    // Verify
-    // let valid = {
-    //     let vk = VerificationKey::from_setup(&setup, &worker, &crs).unwrap();
-    //     // verify::<Bn256, SimpleCircuit<Bn256>, RollingKeccakTranscript<Fr>>(
-    //     verify::<_, _, RollingKeccakTranscript<Fr>>(&vk, &proof, None).unwrap()
-    // };
-    // println!("Verify Done");
-
-    // assert!(valid);
-}
-
-struct TestCircuit<E: Engine> {
-    pub _marker: std::marker::PhantomData<E>,
-}
-
-impl<E: Engine> Circuit<E> for TestCircuit<E> {
-    // type MainGate = Width4MainGateWithDNext;
-    type MainGate = SelectorOptimizedWidth4MainGateWithDNext;
-
-    fn synthesize<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
-        // Prepare
-        use sync_vm::vm::tables::BitwiseLogicTable;
-        use sync_vm::vm::VM_BITWISE_LOGICAL_OPS_TABLE_NAME;
-
-        let columns3 = vec![
-            PolyIdentifier::VariablesPolynomial(0),
-            PolyIdentifier::VariablesPolynomial(1),
-            PolyIdentifier::VariablesPolynomial(2),
-        ];
-
-        if cs.get_table(VM_BITWISE_LOGICAL_OPS_TABLE_NAME).is_err() {
-            let name = VM_BITWISE_LOGICAL_OPS_TABLE_NAME;
-            let bitwise_logic_table = LookupTableApplication::new(
-                name,
-                BitwiseLogicTable::new(&name, 8),
-                columns3.clone(),
-                None,
-                true,
+    #[test]
+    fn test_ecrecover() -> Result<(), SynthesisError> {
+        let cs = &mut create_test_constraint_system()?;
+        // The signing secret key:
+        // 3b940b5586823dfd02ae3b461bb4336b5ecbaefd6627aa922efc048fec0c881c
+        // The corresponding publickey:
+        // 1d152307c6b72b0ed0418b0e70cd80e7f5295b8d86f5722d3f5213fbd2394f36
+        // b7ce9c3e45905178455900b44abb308f3ef480481a4b2ee3f70aca157fde396a
+        let (message_hash_as_u64x4, r_as_u64x4, s_as_u64x4, recid) = (
+            uint256_from_be_hex_str(
+                cs,
+                "c74d460340f9fea30c254d133303361e67246c40a52e6b5ddbbd813e0d211762",
+            )?,
+            uint256_from_be_hex_str(
+                cs,
+                "0c0422df7d6f26a8d6250236060b8acd514fa4e8d260ff3c32c3aad4b6b47037",
+            )?,
+            uint256_from_be_hex_str(
+                cs,
+                "6e0f5a27e14e47ad328d01c3d8a4b969febab06ea26c84caa1fbe1779d62a785",
+            )?,
+            UInt32::allocate(cs, Some(0))?,
+        );
+        let n = cs.n();
+        let (success, (x, y)) =
+            super::ecrecover(cs, &recid, &r_as_u64x4, &s_as_u64x4, &message_hash_as_u64x4)?;
+        // Verify
+        {
+            Boolean::enforce_equal(cs, &success, &Boolean::constant(true))?;
+            let (expected_x, expected_y) = (
+                uint256_from_be_hex_str(
+                    cs,
+                    "1d152307c6b72b0ed0418b0e70cd80e7f5295b8d86f5722d3f5213fbd2394f36",
+                )?,
+                uint256_from_be_hex_str(
+                    cs,
+                    "b7ce9c3e45905178455900b44abb308f3ef480481a4b2ee3f70aca157fde396a",
+                )?,
             );
-            cs.add_table(bitwise_logic_table)?;
-        };
-        inscribe_default_range_table_for_bit_width_over_first_three_columns(cs, 16)?;
-
-        let values = values_be();
-        let mut read_values = [UInt256::zero(); 4];
-        let mut read_values_le_bytes = [[Num::zero(); 32]; 4];
-        for idx in 0..4 {
-            let (u256_value, le_bytes) =
-                // err
-                UInt256::alloc_from_biguint_and_return_u8_chunks(cs, Some(values[idx].clone()))?;
-            read_values[idx] = u256_value;
-            read_values_le_bytes[idx] = le_bytes;
+            let x_is_equal = UInt256::equals(cs, &x, &expected_x)?;
+            let y_is_equal = UInt256::equals(cs, &y, &expected_y)?;
+            Boolean::enforce_equal(cs, &x_is_equal, &Boolean::constant(true))?;
+            Boolean::enforce_equal(cs, &y_is_equal, &Boolean::constant(true))?;
         }
-        let [message_hash_as_u64x4, _v, r_as_u64x4, s_as_u64x4] = read_values;
-        let [_, v_bytes, _, _] = read_values_le_bytes;
-        let recid = UInt32::from_num_unchecked(v_bytes[0]);
-
-        let (success, (x, y)) = ecrecover_precompile_inner_routine::<E, CS>(
-            cs,
-            &recid,
-            &r_as_u64x4,
-            &s_as_u64x4,
-            &message_hash_as_u64x4,
-        )?;
-
-        // println!("success is: {:?}", success);
+        let n = cs.n() - n;
+        println!("Roughly {} gates", n);
+        assert!(cs.is_satisfied());
         Ok(())
     }
-}
-
-fn values_be() -> [BigUint; 4] {
-    use std::str::FromStr;
-    fn to_big_uint(str: &str) -> BigUint {
-        BigUint::from_str(str).unwrap()
-    }
-    let r =
-        to_big_uint("5435062255911969185044564751338785845653803886346232835019851083603393146935");
-    let s = to_big_uint(
-        "49781538282467577799697603548552481909321341893343441053257506510015983429509",
-    );
-    let v = to_big_uint("0");
-    let msg_hash = to_big_uint(
-        "90146787302024890731796003155630242366640710592305648807484605595975845746530",
-    );
-    // The corresponding publickey (uncompressed):
-    // 1d152307c6b72b0ed0418b0e70cd80e7f5295b8d86f5722d3f5213fbd2394f36b7ce9c3e45905178455900b44abb308f3ef480481a4b2ee3f70aca157fde396a
-    // The signing secret key:
-    // 3b940b5586823dfd02ae3b461bb4336b5ecbaefd6627aa922efc048fec0c881c
-    [msg_hash, v, r, s]
 }

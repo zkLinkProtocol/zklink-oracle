@@ -118,11 +118,18 @@ mod tests {
             .map(|b| Byte::from_u8_witness(cs, Some(*b)).unwrap())
             .collect::<Vec<_>>();
         let digest = super::digest(cs, &input_bytes)?;
-        let digest = Byte::get_byte_value_multiple(&digest).unwrap();
-        assert_eq!(
-            hex::encode(digest),
-            "47173285a8d7341e5e972fc677286384f802f8ef"
-        );
+        {
+            let expected_digest = hex::decode("47173285a8d7341e5e972fc677286384f802f8ef")
+                .unwrap()
+                .into_iter()
+                .map(|b| Byte::constant(b))
+                .collect::<Vec<_>>();
+            for i in 0..digest.len() {
+                digest[i]
+                    .inner
+                    .enforce_equal(cs, &expected_digest[i].inner)?;
+            }
+        }
         let n = cs.n() - n;
         println!("Roughly {} gates", n);
         assert!(cs.is_satisfied());
@@ -130,10 +137,9 @@ mod tests {
     }
 
     fn hex_to_hash<E: Engine, CS: ConstraintSystem<E>>(cs: &mut CS, hex: &str) -> Hash<E> {
-        let mut hash = [0u8; 20];
-        hex::decode_to_slice(hex, &mut hash).unwrap();
-        hash.map(|b| Byte::from_u8_witness(cs, Some(b)).unwrap())
+        hex_to_bytes(cs, hex).try_into().unwrap()
     }
+
     fn hex_to_bytes<E: Engine, CS: ConstraintSystem<E>>(cs: &mut CS, hex: &str) -> Vec<Byte<E>> {
         let bytes = hex::decode(hex).unwrap();
         bytes

@@ -8,5 +8,11 @@ edition = "2021"
 [dependencies]
 hex = "0.4.3"
 num-bigint = "0.4.4"
-sync_vm = { path = "../zksync/era-sync_vm/" }
+sync_vm = { git = "https://github.com/matter-labs/era-sync_vm.git", branch = "v1.3.3", features = [
+  "external_testing",
+] }
 pairing = { package = "pairing_ce", version = "0.28.5" }
+
+# For local test
+[patch."https://github.com/matter-labs/era-sync_vm"]
+sync_vm = { path = "../zksync/era-sync_vm/" }

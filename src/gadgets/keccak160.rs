@@ -10,11 +10,21 @@ use sync_vm::{
     glue::prepacked_long_comparison,
 };
 
-use super::utils::bytes_be_to_num;
+use super::utils::{bytes_be_to_num, new_synthesis_error};
 
-const BYTE_WIDTH: usize = 20;
-const BIT_WIDTH: usize = BYTE_WIDTH * 8;
-pub type Hash<E> = [Byte<E>; BYTE_WIDTH];
+pub const HASH_BYTE_WIDTH: usize = 20;
+pub const HASH_BIT_WIDTH: usize = HASH_BYTE_WIDTH * 8;
+pub type Hash<E> = [Byte<E>; HASH_BYTE_WIDTH];
+
+pub fn hash_from_slice<E: Engine>(bytes: &[Byte<E>]) -> Result<Hash<E>, SynthesisError> {
+    bytes.try_into().map_err(|_| {
+        new_synthesis_error(format!(
+            "invalid bytes length {}, expect {}",
+            bytes.len(),
+            HASH_BYTE_WIDTH
+        ))
+    })
+}
 
 // cost: 26723 gates for each block
 pub fn digest<E: Engine, CS: ConstraintSystem<E>>(
@@ -22,20 +32,37 @@ pub fn digest<E: Engine, CS: ConstraintSystem<E>>(
     bytes: &[Byte<E>],
 ) -> Result<Hash<E>, SynthesisError> {
     let digest256 = super::keccak256::digest(cs, bytes)?;
-    let mut digest160 = [Byte::<E>::zero(); BYTE_WIDTH];
-    digest160[..].copy_from_slice(&digest256[..BYTE_WIDTH]);
+    let mut digest160 = [Byte::<E>::zero(); HASH_BYTE_WIDTH];
+    digest160[..].copy_from_slice(&digest256[..HASH_BYTE_WIDTH]);
     Ok(digest160)
 }
 
 // Circuit version of Pyth Merkle Merkle
 // See: https://github.com/pyth-network/pyth-crosschain/blob/245cc231fd0acd5d91757ab29f474237c2a606aa/pythnet/pythnet_sdk/src/accumulators/merkle.rs#L72-L78
-pub struct MerkleTree<E: Engine> {
-    root: Hash<E>,
-    proof: Vec<Hash<E>>,
-    item: Vec<Byte<E>>,
+#[derive(Debug, Clone)]
+pub struct MerkleRoot<E: Engine>(Hash<E>);
+#[derive(Debug, Clone)]
+pub struct MerklePath<E: Engine>(Vec<Hash<E>>);
+
+impl<E: Engine> MerklePath<E> {
+    pub fn new(proof: Vec<Hash<E>>) -> Self {
+        Self(proof)
+    }
+
+    pub fn inner(&self) -> Vec<Hash<E>> {
+        self.0.clone()
+    }
 }
 
-impl<E: Engine> MerkleTree<E> {
+impl<E: Engine> MerkleRoot<E> {
+    pub fn new(hash: Hash<E>) -> Self {
+        Self(hash)
+    }
+
+    pub fn inner(&self) -> Hash<E> {
+        self.0.clone()
+    }
+
     // https://github.com/pyth-network/pyth-crosschain/blob/245cc231fd0acd5d91757ab29f474237c2a606aa/pythnet/pythnet_sdk/src/accumulators/merkle.rs#L196-L198
     pub fn hash_leaf<CS: ConstraintSystem<E>>(
         cs: &mut CS,
@@ -53,9 +80,9 @@ impl<E: Engine> MerkleTree<E> {
     ) -> Result<Hash<E>, SynthesisError> {
         let ln = bytes_be_to_num(cs, &l)?;
         let rn = bytes_be_to_num(cs, &r)?;
-        let (_, l_is_greater) = prepacked_long_comparison(cs, &[ln], &[rn], &[BIT_WIDTH])?;
+        let (_, l_is_greater) = prepacked_long_comparison(cs, &[ln], &[rn], &[HASH_BIT_WIDTH])?;
         let (l, r): (Hash<_>, Hash<_>) = {
-            let zipped = (0..BYTE_WIDTH)
+            let zipped = (0..HASH_BYTE_WIDTH)
                 .into_iter()
                 .map(|i| {
                     let li = l[i].inner;
@@ -70,31 +97,38 @@ impl<E: Engine> MerkleTree<E> {
                 })
                 .collect::<Result<Vec<_>, SynthesisError>>()?;
             let (l, r): (Vec<_>, Vec<_>) = zipped.into_iter().unzip();
-            (l.try_into().unwrap(), r.try_into().unwrap())
+            (hash_from_slice(&l)?, hash_from_slice(&r)?)
         };
         // https://github.com/pyth-network/pyth-crosschain/blob/245cc231fd0acd5d91757ab29f474237c2a606aa/pythnet/pythnet_sdk/src/accumulators/merkle.rs#L201-L207
-        let mut bytes = [Byte::zero(); 1 + BYTE_WIDTH * 2];
+        let mut bytes = [Byte::zero(); 1 + HASH_BYTE_WIDTH * 2];
         bytes[0] = Byte::<E>::constant(1);
-        bytes[1..BYTE_WIDTH + 1].copy_from_slice(&l[..]);
-        bytes[BYTE_WIDTH + 1..].copy_from_slice(&r[..]);
+        bytes[1..HASH_BYTE_WIDTH + 1].copy_from_slice(&l[..]);
+        bytes[HASH_BYTE_WIDTH + 1..].copy_from_slice(&r[..]);
         digest(cs, &bytes)
     }
 
     // https://github.com/pyth-network/pyth-crosschain/blob/245cc231fd0acd5d91757ab29f474237c2a606aa/pythnet/pythnet_sdk/src/accumulators/merkle.rs#L88-L94
-    pub fn check<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<Boolean, SynthesisError> {
-        let mut current = Self::hash_leaf(cs, &self.item)?;
-        for hash in &self.proof {
+    pub fn check<CS: ConstraintSystem<E>>(
+        &self,
+        cs: &mut CS,
+        path: &MerklePath<E>,
+        item: &[Byte<E>],
+    ) -> Result<Boolean, SynthesisError> {
+        let mut current = Self::hash_leaf(cs, item)?;
+        for hash in &path.0 {
             let (l, r) = (current, *hash);
             current = Self::hash_node(cs, l, r)?;
         }
         let current = bytes_be_to_num(cs, &current)?;
-        let root = bytes_be_to_num(cs, &self.root)?;
+        let root = bytes_be_to_num(cs, &self.0)?;
         Num::equals(cs, &current, &root)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::gadgets::keccak160::{MerklePath, MerkleRoot};
+
     use super::Hash;
     use pairing::Engine;
     use sync_vm::{
@@ -105,7 +139,7 @@ mod tests {
         },
     };
 
-    use super::super::{keccak160::MerkleTree, testing::create_test_constraint_system};
+    use super::super::testing::create_test_constraint_system;
 
     #[test]
     fn test_keccak160() -> Result<(), SynthesisError> {
@@ -149,12 +183,12 @@ mod tests {
     }
 
     #[test]
-    fn test_merkle_tree() -> Result<(), SynthesisError> {
-        let mut cs = create_test_constraint_system()?;
-        let cs = &mut cs;
-        let merkle_tree = MerkleTree {
-            root: hex_to_hash(cs, "095bb7e5fa374ea08603a6698123d99101547a50"),
-            proof: [
+    fn test_merkle_check() -> Result<(), SynthesisError> {
+        let cs = &mut create_test_constraint_system()?;
+        let merkle_root =
+            MerkleRoot::new(hex_to_hash(cs, "095bb7e5fa374ea08603a6698123d99101547a50"));
+        let merkle_path = {
+            let nodes = [
                 "c7073cf69695359c52329409390f17b8f27770c8",
                 "210eb6077a92151e6057fa3dab51814634d5fe67",
                 "406d6f9c5a16cca35edb3c9b2ba4ddba2be75113",
@@ -165,11 +199,15 @@ mod tests {
                 "b3096666e7a2cd3065036dcdb7ded1c6ea3fee4e",
                 "71d1fb308fe0c4e5e086edc1476ddb6a19611ba9",
                 "76163f6ab8f1d74214184da7952bc731ff51f01f",
-            ].iter().map(|h| hex_to_hash(cs, h)).collect::<Vec<_>>(),
-            item: hex_to_bytes(cs, "0007ad7b4a7662d19a6bc675f6b467172d2f3947fa653ca97555a9b2023640662800000000152f9dbf00000000000796fafffffff800000000655ccff700000000655ccff70000000015718f26000000000008745c"),
+            ]
+            .iter()
+            .map(|h| hex_to_hash(cs, h))
+            .collect::<Vec<_>>();
+            MerklePath::new(nodes)
         };
+        let item = hex_to_bytes(cs, "0007ad7b4a7662d19a6bc675f6b467172d2f3947fa653ca97555a9b2023640662800000000152f9dbf00000000000796fafffffff800000000655ccff700000000655ccff70000000015718f26000000000008745c");
         let n = cs.n();
-        let valid = merkle_tree.check(cs)?;
+        let valid = merkle_root.check(cs, &merkle_path, &item)?;
         Boolean::enforce_equal(cs, &valid, &Boolean::constant(true))?;
         let n = cs.n() - n;
         println!("Roughly {} gates", n);

@@ -63,3 +63,8 @@ pub fn uint256_from_be_hex_str<E: Engine, CS: ConstraintSystem<E>>(
     let bytes: [Byte<E>; 32] = bytes.try_into().unwrap();
     UInt256::from_be_bytes_fixed(cs, &bytes)
 }
+
+pub fn new_synthesis_error<T: AsRef<str>>(msg: T) -> SynthesisError {
+    let err = std::io::Error::new(std::io::ErrorKind::Other, msg.as_ref());
+    SynthesisError::from(err)
+}

@@ -42,15 +42,26 @@ pub fn digest<E: Engine, CS: ConstraintSystem<E>>(
 #[derive(Debug, Clone)]
 pub struct MerkleRoot<E: Engine>(Hash<E>);
 #[derive(Debug, Clone)]
-pub struct MerklePath<E: Engine>(Vec<Hash<E>>);
+pub struct MerklePath<E: Engine, const N: usize>(pub [Hash<E>; N]);
 
-impl<E: Engine> MerklePath<E> {
-    pub fn new(proof: Vec<Hash<E>>) -> Self {
+impl<E: Engine, const N: usize> MerklePath<E, N> {
+    pub fn new(proof: [Hash<E>; N]) -> Self {
         Self(proof)
     }
 
-    pub fn inner(&self) -> Vec<Hash<E>> {
-        self.0.clone()
+    pub fn new_from_slice(proof: &[Hash<E>]) -> Result<Self, SynthesisError> {
+        let proof = proof.try_into().map_err(|_| {
+            new_synthesis_error(format!(
+                "invalid proof length {}, expect {}",
+                proof.len(),
+                N
+            ))
+        })?;
+        Ok(Self(proof))
+    }
+
+    pub fn len(&self) -> usize {
+        N
     }
 }
 
@@ -108,10 +119,10 @@ impl<E: Engine> MerkleRoot<E> {
     }
 
     // https://github.com/pyth-network/pyth-crosschain/blob/245cc231fd0acd5d91757ab29f474237c2a606aa/pythnet/pythnet_sdk/src/accumulators/merkle.rs#L88-L94
-    pub fn check<CS: ConstraintSystem<E>>(
+    pub fn check<CS: ConstraintSystem<E>, const N: usize>(
         &self,
         cs: &mut CS,
-        path: &MerklePath<E>,
+        path: &MerklePath<E, N>,
         item: &[Byte<E>],
     ) -> Result<Boolean, SynthesisError> {
         let mut current = Self::hash_leaf(cs, item)?;
@@ -200,9 +211,7 @@ mod tests {
                 "71d1fb308fe0c4e5e086edc1476ddb6a19611ba9",
                 "76163f6ab8f1d74214184da7952bc731ff51f01f",
             ]
-            .iter()
-            .map(|h| hex_to_hash(cs, h))
-            .collect::<Vec<_>>();
+            .map(|h| hex_to_hash(cs, h));
             MerklePath::new(nodes)
         };
         let item = hex_to_bytes(cs, "0007ad7b4a7662d19a6bc675f6b467172d2f3947fa653ca97555a9b2023640662800000000152f9dbf00000000000796fafffffff800000000655ccff700000000655ccff70000000015718f26000000000008745c");

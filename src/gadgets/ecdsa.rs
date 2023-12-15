@@ -1,6 +1,8 @@
+use num_bigint::BigUint;
 use sync_vm::circuit_structures::byte::IntoBytes as _;
 use sync_vm::secp256k1::fq::Fq as Secp256Fq;
 use sync_vm::secp256k1::fr::Fr as Secp256Fr;
+use sync_vm::traits::{CSAllocatable, CSWitnessable};
 use sync_vm::{
     circuit_structures::{byte::Byte, utils::can_not_be_false_if_flagged},
     franklin_crypto::{
@@ -64,6 +66,74 @@ const CHUNK_BITLEN: usize = 64;
 const SECP_B_COEF: u64 = 7;
 const EXCEPTION_FLAGS_ARR_LEN: usize = 4;
 const X_POWERS_ARR_LEN: usize = 256;
+
+pub struct Signature<E: Engine> {
+    pub r: UInt256<E>,
+    pub s: UInt256<E>,
+    pub recid: UInt32<E>,
+}
+
+impl<E: Engine> Signature<E> {
+    pub fn ecrecover<CS: ConstraintSystem<E>>(
+        &self,
+        cs: &mut CS,
+        message_hash: &UInt256<E>,
+    ) -> Result<(Boolean, (UInt256<E>, UInt256<E>)), SynthesisError> {
+        ecrecover(cs, &self.recid, &self.r, &self.s, message_hash)
+    }
+
+    pub fn verify<CS: ConstraintSystem<E>>(
+        &self,
+        cs: &mut CS,
+        message_hash: &UInt256<E>,
+        pubkey: &(UInt256<E>, UInt256<E>),
+    ) -> Result<Boolean, SynthesisError> {
+        let (success, (x, y)) = self.ecrecover(cs, &message_hash)?;
+        let x_is_equal = UInt256::equals(cs, &x, &pubkey.0)?;
+        let y_is_equal = UInt256::equals(cs, &y, &pubkey.1)?;
+        let valid = Boolean::and(cs, &x_is_equal, &y_is_equal)?;
+        let valid = Boolean::and(cs, &valid, &success)?;
+        Ok(valid)
+    }
+}
+
+impl<E: Engine> CSWitnessable<E> for Signature<E> {
+    type Witness = (BigUint, BigUint, u32);
+
+    fn create_witness(&self) -> Option<Self::Witness> {
+        if let (Some(r), Some(s), Some(recid)) = (
+            self.r.get_value(),
+            self.s.get_value(),
+            self.recid.get_value(),
+        ) {
+            Some((r, s, recid))
+        } else {
+            None
+        }
+    }
+
+    fn placeholder_witness() -> Self::Witness {
+        (BigUint::from(0u32), BigUint::from(0u32), 0u32)
+    }
+}
+
+impl<E: Engine> CSAllocatable<E> for Signature<E> {
+    fn alloc_from_witness<CS: ConstraintSystem<E>>(
+        cs: &mut CS,
+        witness: Option<Self::Witness>,
+    ) -> Result<Self, SynthesisError> {
+        let (r, s, v) = if let Some((r, s, recid)) = witness {
+            (Some(r), Some(s), Some(recid))
+        } else {
+            (None, None, None)
+        };
+        Ok(Self {
+            r: UInt256::alloc_from_witness(cs, r)?,
+            s: UInt256::alloc_from_witness(cs, s)?,
+            recid: UInt32::alloc_from_witness(cs, v)?,
+        })
+    }
+}
 
 pub fn ecrecover<'a, E: Engine, CS: ConstraintSystem<E>>(
     cs: &mut CS,
@@ -385,57 +455,62 @@ pub fn ecrecover<'a, E: Engine, CS: ConstraintSystem<E>>(
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+    use std::str::FromStr;
+
+    use num::Num as _;
+    use num_bigint::BigUint;
     use sync_vm::{
         franklin_crypto::{bellman::SynthesisError, plonk::circuit::boolean::Boolean},
-        vm::primitives::{uint256::UInt256, UInt32},
+        traits::CSAllocatable,
+        vm::primitives::uint256::UInt256,
     };
 
-    use crate::gadgets::{testing::create_test_constraint_system, utils::uint256_from_be_hex_str};
+    use crate::{gadgets::ecdsa::Signature, utils::testing::create_test_constraint_system};
 
     #[test]
     fn test_ecrecover() -> Result<(), SynthesisError> {
         let cs = &mut create_test_constraint_system()?;
-        // The signing secret key:
-        // 3b940b5586823dfd02ae3b461bb4336b5ecbaefd6627aa922efc048fec0c881c
-        // The corresponding publickey:
-        // 1d152307c6b72b0ed0418b0e70cd80e7f5295b8d86f5722d3f5213fbd2394f36
-        // b7ce9c3e45905178455900b44abb308f3ef480481a4b2ee3f70aca157fde396a
-        let (message_hash_as_u64x4, r_as_u64x4, s_as_u64x4, recid) = (
-            uint256_from_be_hex_str(
-                cs,
-                "c74d460340f9fea30c254d133303361e67246c40a52e6b5ddbbd813e0d211762",
-            )?,
-            uint256_from_be_hex_str(
-                cs,
+        let signature = (
+            BigUint::from_str_radix(
                 "0c0422df7d6f26a8d6250236060b8acd514fa4e8d260ff3c32c3aad4b6b47037",
-            )?,
-            uint256_from_be_hex_str(
-                cs,
+                16,
+            )
+            .unwrap(),
+            BigUint::from_str_radix(
                 "6e0f5a27e14e47ad328d01c3d8a4b969febab06ea26c84caa1fbe1779d62a785",
-            )?,
-            UInt32::allocate(cs, Some(0))?,
+                16,
+            )
+            .unwrap(),
+            0u32,
         );
+
+        let message_hash = {
+            let message_hash =
+                hex::decode("c74d460340f9fea30c254d133303361e67246c40a52e6b5ddbbd813e0d211762")
+                    .unwrap();
+            let message_hash = BigUint::from_bytes_be(&message_hash);
+            UInt256::alloc_from_witness(cs, Some(message_hash))?
+        };
         let n = cs.n();
-        let (success, (x, y)) =
-            super::ecrecover(cs, &recid, &r_as_u64x4, &s_as_u64x4, &message_hash_as_u64x4)?;
-        // Verify
-        {
-            Boolean::enforce_equal(cs, &success, &Boolean::constant(true))?;
-            let (expected_x, expected_y) = (
-                uint256_from_be_hex_str(
-                    cs,
+        let signature = Signature::alloc_from_witness(cs, Some(signature))?;
+        let pubkey = {
+            let (x, y) = (
+                BigUint::from_str_radix(
                     "1d152307c6b72b0ed0418b0e70cd80e7f5295b8d86f5722d3f5213fbd2394f36",
-                )?,
-                uint256_from_be_hex_str(
-                    cs,
+                    16,
+                )
+                .unwrap(),
+                BigUint::from_str_radix(
                     "b7ce9c3e45905178455900b44abb308f3ef480481a4b2ee3f70aca157fde396a",
-                )?,
+                    16,
+                )
+                .unwrap(),
             );
-            let x_is_equal = UInt256::equals(cs, &x, &expected_x)?;
-            let y_is_equal = UInt256::equals(cs, &y, &expected_y)?;
-            Boolean::enforce_equal(cs, &x_is_equal, &Boolean::constant(true))?;
-            Boolean::enforce_equal(cs, &y_is_equal, &Boolean::constant(true))?;
-        }
+            (UInt256::constant(x), UInt256::constant(y))
+        };
+        let valid = signature.verify(cs, &message_hash, &pubkey)?;
+        Boolean::enforce_equal(cs, &valid, &Boolean::constant(true))?;
         let n = cs.n() - n;
         println!("Roughly {} gates", n);
         assert!(cs.is_satisfied());

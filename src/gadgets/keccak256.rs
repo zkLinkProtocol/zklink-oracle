@@ -34,7 +34,7 @@ pub fn digest<E: Engine, CS: ConstraintSystem<E>>(
 mod tests {
     use sync_vm::{circuit_structures::byte::Byte, franklin_crypto::bellman::SynthesisError};
 
-    use crate::gadgets::testing::create_test_constraint_system;
+    use crate::utils::testing::create_test_constraint_system;
 
     #[test]
     fn test_keccak256() -> Result<(), SynthesisError> {

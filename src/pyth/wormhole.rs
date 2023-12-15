@@ -1,10 +1,7 @@
 use pairing::Engine;
 use sync_vm::{circuit_structures::byte::Byte, franklin_crypto::bellman::SynthesisError};
 
-use crate::{
-    params::{LEN_MERKLE_TREE_HASH, NUM_WORMHOLE_SIGNATURES},
-    utils::new_synthesis_error,
-};
+use crate::{gadgets::keccak160, params::NUM_WORMHOLE_SIGNATURES, utils::new_synthesis_error};
 
 // Circuit representation of [`wormhole vaa`](https://docs.wormhole.com/wormhole/explore-wormhole/vaa)
 // We only put part of the VAA fields here.
@@ -122,7 +119,7 @@ const LEN_MAGIC: usize = 4;
 const LEN_PAYLOAD_TYPE: usize = 1;
 const LEN_SLOT: usize = 8;
 const LEN_RING_SIZE: usize = 4;
-const LEN_ROOT: usize = LEN_MERKLE_TREE_HASH;
+const LEN_ROOT: usize = keccak160::WIDTH_HASH_BYTES;
 const LEN_MESSAGE: usize = LEN_MAGIC + LEN_PAYLOAD_TYPE + LEN_SLOT + LEN_RING_SIZE + LEN_ROOT;
 // Representation of pyth-defined wormhole payload
 // - https://github.com/pyth-network/pyth-crosschain/blob/1d82f92d80598e689f4130983d06b12412b83427/pythnet/pythnet_sdk/src/wire.rs#L109-L112
@@ -132,7 +129,7 @@ pub struct Message<E: Engine> {
     pub payload_type: [Byte<E>; LEN_PAYLOAD_TYPE],
     pub slot: [Byte<E>; LEN_SLOT],
     pub ring_size: [Byte<E>; LEN_RING_SIZE],
-    pub root: [Byte<E>; LEN_ROOT],
+    pub root: keccak160::Hash<E>,
 }
 
 impl<E: Engine> Message<E> {
@@ -187,12 +184,12 @@ mod tests {
     use pairing::bn256::Bn256;
     use sync_vm::franklin_crypto::bellman::SynthesisError;
 
-    use crate::utils::{bytes_assert_eq, hex_to_bytes_constant};
+    use crate::utils::{bytes_constant_from_hex_str, testing::bytes_assert_eq};
 
     #[test]
     fn test_wormhole_payload() -> Result<(), SynthesisError> {
         let hex_str = "415557560000000000069b993c00002710095bb7e5fa374ea08603a6698123d99101547a50";
-        let bytes = hex_to_bytes_constant::<Bn256>(hex_str)?;
+        let bytes = bytes_constant_from_hex_str::<Bn256>(hex_str)?;
         let payload = super::Message::new_from_slice(&bytes)?;
         {
             bytes_assert_eq(&payload.magic, "41555756");
@@ -209,7 +206,7 @@ mod tests {
     #[test]
     fn test_wormhole_body() -> Result<(), SynthesisError> {
         let hex_str = "655ccff800000000001ae101faedac5851e32b9b23b5f9411a8c2bac4aae3ed4dd7b811dd1a72ea4aa71000000000195faa401415557560000000000069b993c00002710095bb7e5fa374ea08603a6698123d99101547a50";
-        let bytes = hex_to_bytes_constant::<Bn256>(hex_str)?;
+        let bytes = bytes_constant_from_hex_str::<Bn256>(hex_str)?;
         let body = super::WormholeBody::new_from_slice(&bytes)?;
         {
             bytes_assert_eq(&body.timestamp, "655ccff8");

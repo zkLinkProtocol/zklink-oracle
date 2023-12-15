@@ -10,18 +10,18 @@ use sync_vm::{
     glue::prepacked_long_comparison,
 };
 
-use super::utils::{bytes_be_to_num, new_synthesis_error};
+use crate::utils::{new_synthesis_error, num_from_be_bytes};
 
-pub const HASH_BYTE_WIDTH: usize = 20;
-pub const HASH_BIT_WIDTH: usize = HASH_BYTE_WIDTH * 8;
-pub type Hash<E> = [Byte<E>; HASH_BYTE_WIDTH];
+pub const WIDTH_HASH_BYTES: usize = 20;
+pub const WIDTH_HASH_BITS: usize = WIDTH_HASH_BYTES * 8;
+pub type Hash<E> = [Byte<E>; WIDTH_HASH_BYTES];
 
 pub fn hash_from_slice<E: Engine>(bytes: &[Byte<E>]) -> Result<Hash<E>, SynthesisError> {
     bytes.try_into().map_err(|_| {
         new_synthesis_error(format!(
             "invalid bytes length {}, expect {}",
             bytes.len(),
-            HASH_BYTE_WIDTH
+            WIDTH_HASH_BYTES
         ))
     })
 }
@@ -32,8 +32,8 @@ pub fn digest<E: Engine, CS: ConstraintSystem<E>>(
     bytes: &[Byte<E>],
 ) -> Result<Hash<E>, SynthesisError> {
     let digest256 = super::keccak256::digest(cs, bytes)?;
-    let mut digest160 = [Byte::<E>::zero(); HASH_BYTE_WIDTH];
-    digest160[..].copy_from_slice(&digest256[..HASH_BYTE_WIDTH]);
+    let mut digest160 = [Byte::<E>::zero(); WIDTH_HASH_BYTES];
+    digest160[..].copy_from_slice(&digest256[..WIDTH_HASH_BYTES]);
     Ok(digest160)
 }
 
@@ -89,11 +89,11 @@ impl<E: Engine> MerkleRoot<E> {
         l: Hash<E>,
         r: Hash<E>,
     ) -> Result<Hash<E>, SynthesisError> {
-        let ln = bytes_be_to_num(cs, &l)?;
-        let rn = bytes_be_to_num(cs, &r)?;
-        let (_, l_is_greater) = prepacked_long_comparison(cs, &[ln], &[rn], &[HASH_BIT_WIDTH])?;
+        let ln = num_from_be_bytes(cs, &l)?;
+        let rn = num_from_be_bytes(cs, &r)?;
+        let (_, l_is_greater) = prepacked_long_comparison(cs, &[ln], &[rn], &[WIDTH_HASH_BITS])?;
         let (l, r): (Hash<_>, Hash<_>) = {
-            let zipped = (0..HASH_BYTE_WIDTH)
+            let zipped = (0..WIDTH_HASH_BYTES)
                 .into_iter()
                 .map(|i| {
                     let li = l[i].inner;
@@ -111,10 +111,10 @@ impl<E: Engine> MerkleRoot<E> {
             (hash_from_slice(&l)?, hash_from_slice(&r)?)
         };
         // https://github.com/pyth-network/pyth-crosschain/blob/245cc231fd0acd5d91757ab29f474237c2a606aa/pythnet/pythnet_sdk/src/accumulators/merkle.rs#L201-L207
-        let mut bytes = [Byte::zero(); 1 + HASH_BYTE_WIDTH * 2];
+        let mut bytes = [Byte::zero(); 1 + WIDTH_HASH_BYTES * 2];
         bytes[0] = Byte::<E>::constant(1);
-        bytes[1..HASH_BYTE_WIDTH + 1].copy_from_slice(&l[..]);
-        bytes[HASH_BYTE_WIDTH + 1..].copy_from_slice(&r[..]);
+        bytes[1..WIDTH_HASH_BYTES + 1].copy_from_slice(&l[..]);
+        bytes[WIDTH_HASH_BYTES + 1..].copy_from_slice(&r[..]);
         digest(cs, &bytes)
     }
 
@@ -130,15 +130,18 @@ impl<E: Engine> MerkleRoot<E> {
             let (l, r) = (current, *hash);
             current = Self::hash_node(cs, l, r)?;
         }
-        let current = bytes_be_to_num(cs, &current)?;
-        let root = bytes_be_to_num(cs, &self.0)?;
+        let current = num_from_be_bytes(cs, &current)?;
+        let root = num_from_be_bytes(cs, &self.0)?;
         Num::equals(cs, &current, &root)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::gadgets::keccak160::{MerklePath, MerkleRoot};
+    use crate::{
+        gadgets::keccak160::{MerklePath, MerkleRoot},
+        utils::testing::create_test_constraint_system,
+    };
 
     use super::Hash;
     use pairing::Engine;
@@ -149,8 +152,6 @@ mod tests {
             plonk::circuit::boolean::Boolean,
         },
     };
-
-    use super::super::testing::create_test_constraint_system;
 
     #[test]
     fn test_keccak160() -> Result<(), SynthesisError> {

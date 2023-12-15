@@ -6,12 +6,13 @@ use crate::{
     utils::new_synthesis_error,
 };
 
-// Representation of [`wormhole vaa`](https://docs.wormhole.com/wormhole/explore-wormhole/vaa)
+// Circuit representation of [`wormhole vaa`](https://docs.wormhole.com/wormhole/explore-wormhole/vaa)
 // We only put part of the VAA fields here.
 //
 // Representation of wormhole VAA. We only put parts of VAA fields here.
 // - https://docs.wormhole.com/wormhole/explore-wormhole/vaa
 // - https://github.com/wormhole-foundation/wormhole/blob/bfd4ba40ef2d213ad69bac638c72009ba4a07878/sdk/rust/core/src/vaa.rs#L84-L100
+#[derive(Debug, Clone)]
 pub struct WormholeMessage<E: Engine> {
     pub signatures: [Byte<E>; NUM_WORMHOLE_SIGNATURES],
     pub body: WormholeBody<E>,
@@ -30,6 +31,7 @@ const LEN_WORMHOLE_BODY: usize = LEN_WORMHOLE_BODY_TIMESTAMP
     + LEN_WORMHOLE_BODY_SEQUENCE
     + LEN_WORMHOLE_BODY_CONSISTENCY_LEVEL
     + LEN_MESSAGE;
+#[derive(Debug, Clone)]
 pub struct WormholeBody<E: Engine> {
     pub timestamp: [Byte<E>; LEN_WORMHOLE_BODY_TIMESTAMP],
     pub nonce: [Byte<E>; LEN_WORMHOLE_BODY_NONCE],
@@ -40,7 +42,7 @@ pub struct WormholeBody<E: Engine> {
     pub payload: Message<E>,
 }
 
-// Representation of body in wormhole VAA.
+// Circuit representation of body in wormhole VAA.
 // - https://docs.wormhole.com/wormhole/explore-wormhole/vaa#body
 // - https://github.com/wormhole-foundation/wormhole/blob/bfd4ba40ef2d213ad69bac638c72009ba4a07878/sdk/rust/core/src/vaa.rs#L112-L121
 impl<E: Engine> WormholeBody<E> {
@@ -124,6 +126,7 @@ const LEN_ROOT: usize = LEN_MERKLE_TREE_HASH;
 const LEN_MESSAGE: usize = LEN_MAGIC + LEN_PAYLOAD_TYPE + LEN_SLOT + LEN_RING_SIZE + LEN_ROOT;
 // Representation of pyth-defined wormhole payload
 // - https://github.com/pyth-network/pyth-crosschain/blob/1d82f92d80598e689f4130983d06b12412b83427/pythnet/pythnet_sdk/src/wire.rs#L109-L112
+#[derive(Debug, Clone)]
 pub struct Message<E: Engine> {
     pub magic: [Byte<E>; LEN_MAGIC],
     pub payload_type: [Byte<E>; LEN_PAYLOAD_TYPE],
@@ -187,7 +190,7 @@ mod tests {
     use crate::utils::{bytes_assert_eq, hex_to_bytes_constant};
 
     #[test]
-    fn test_payload() -> Result<(), SynthesisError> {
+    fn test_wormhole_payload() -> Result<(), SynthesisError> {
         let hex_str = "415557560000000000069b993c00002710095bb7e5fa374ea08603a6698123d99101547a50";
         let bytes = hex_to_bytes_constant::<Bn256>(hex_str)?;
         let payload = super::Message::new_from_slice(&bytes)?;
@@ -204,7 +207,7 @@ mod tests {
     }
 
     #[test]
-    fn test_body() -> Result<(), SynthesisError> {
+    fn test_wormhole_body() -> Result<(), SynthesisError> {
         let hex_str = "655ccff800000000001ae101faedac5851e32b9b23b5f9411a8c2bac4aae3ed4dd7b811dd1a72ea4aa71000000000195faa401415557560000000000069b993c00002710095bb7e5fa374ea08603a6698123d99101547a50";
         let bytes = hex_to_bytes_constant::<Bn256>(hex_str)?;
         let body = super::WormholeBody::new_from_slice(&bytes)?;

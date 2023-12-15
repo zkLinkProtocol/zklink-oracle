@@ -1,3 +1,4 @@
+use num::traits::FromBytes;
 use num_bigint::BigUint;
 use sync_vm::circuit_structures::byte::IntoBytes as _;
 use sync_vm::secp256k1::fq::Fq as Secp256Fq;
@@ -29,6 +30,8 @@ use sync_vm::{
         primitives::{uint256::UInt256, UInt32, UInt64},
     },
 };
+
+use crate::utils::new_synthesis_error;
 
 // UInt256.inner is private so I have to use this hack
 fn uint256_inner<E: Engine, CS: ConstraintSystem<E>>(
@@ -67,6 +70,7 @@ const SECP_B_COEF: u64 = 7;
 const EXCEPTION_FLAGS_ARR_LEN: usize = 4;
 const X_POWERS_ARR_LEN: usize = 256;
 
+#[derive(Debug, Clone)]
 pub struct Signature<E: Engine> {
     pub r: UInt256<E>,
     pub s: UInt256<E>,
@@ -94,6 +98,26 @@ impl<E: Engine> Signature<E> {
         let valid = Boolean::and(cs, &x_is_equal, &y_is_equal)?;
         let valid = Boolean::and(cs, &valid, &success)?;
         Ok(valid)
+    }
+
+    /// 0  .. 64: r || s
+    /// 64 .. 65: recid
+    pub fn alloc_from_bytes_witness<CS: ConstraintSystem<E>>(
+        cs: &mut CS,
+        witness: &[u8],
+    ) -> Result<Self, SynthesisError> {
+        if witness.len() != 65 {
+            return Err(new_synthesis_error(format!(
+                "expected 65 bytes, got {}",
+                witness.len()
+            )));
+        };
+        let witness = (
+            BigUint::from_be_bytes(witness[..32].try_into().unwrap()),
+            BigUint::from_be_bytes(witness[32..64].try_into().unwrap()),
+            witness[64] as u32,
+        );
+        Self::alloc_from_witness(cs, Some(witness))
     }
 }
 
@@ -455,9 +479,6 @@ pub fn ecrecover<'a, E: Engine, CS: ConstraintSystem<E>>(
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-    use std::str::FromStr;
-
     use num::Num as _;
     use num_bigint::BigUint;
     use sync_vm::{
@@ -471,20 +492,7 @@ mod tests {
     #[test]
     fn test_ecrecover() -> Result<(), SynthesisError> {
         let cs = &mut create_test_constraint_system()?;
-        let signature = (
-            BigUint::from_str_radix(
-                "0c0422df7d6f26a8d6250236060b8acd514fa4e8d260ff3c32c3aad4b6b47037",
-                16,
-            )
-            .unwrap(),
-            BigUint::from_str_radix(
-                "6e0f5a27e14e47ad328d01c3d8a4b969febab06ea26c84caa1fbe1779d62a785",
-                16,
-            )
-            .unwrap(),
-            0u32,
-        );
-
+        let signature = hex::decode("0c0422df7d6f26a8d6250236060b8acd514fa4e8d260ff3c32c3aad4b6b470376e0f5a27e14e47ad328d01c3d8a4b969febab06ea26c84caa1fbe1779d62a78500").unwrap();
         let message_hash = {
             let message_hash =
                 hex::decode("c74d460340f9fea30c254d133303361e67246c40a52e6b5ddbbd813e0d211762")
@@ -493,7 +501,8 @@ mod tests {
             UInt256::alloc_from_witness(cs, Some(message_hash))?
         };
         let n = cs.n();
-        let signature = Signature::alloc_from_witness(cs, Some(signature))?;
+        // let signature = Signature::alloc_from_witness(cs, Some(signature))?;
+        let signature = Signature::alloc_from_bytes_witness(cs, &signature)?;
         let pubkey = {
             let (x, y) = (
                 BigUint::from_str_radix(

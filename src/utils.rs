@@ -101,12 +101,12 @@ pub mod testing {
         vm::{tables::BitwiseLogicTable, VM_BITWISE_LOGICAL_OPS_TABLE_NAME},
     };
 
-    pub fn bytes_assert_eq<E: Engine>(bytes: &[Byte<E>], expected_hex: &str) {
+    pub fn bytes_assert_eq<E: Engine, T: ToString>(bytes: &[Byte<E>], expected_hex: T) {
         let bytes = bytes
             .into_iter()
             .map(|b| b.get_byte_value().unwrap())
             .collect::<Vec<_>>();
-        assert_eq!(hex::encode(&bytes), expected_hex);
+        assert_eq!(hex::encode(&bytes), expected_hex.to_string());
     }
 
     pub fn create_test_constraint_system() -> Result<

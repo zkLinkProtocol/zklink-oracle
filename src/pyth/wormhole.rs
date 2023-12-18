@@ -6,7 +6,7 @@ use sync_vm::{
 };
 
 use crate::{
-    gadgets::{ecdsa::Signature, keccak160},
+    gadgets::{ecdsa::Signature, keccak160::{self, MerkleRoot}},
     params::NUM_WORMHOLE_SIGNATURES,
     utils::new_synthesis_error,
 };
@@ -51,6 +51,35 @@ impl<E: Engine> WormholeMessage<E> {
             signatures: signatures.try_into().unwrap(),
             body,
         })
+    }
+
+    pub fn merkle_root(&self) -> &MerkleRoot<E> {
+        &self.body.payload.root
+    }
+
+    pub fn signatures(&self) -> &[Signature<E>; NUM_WORMHOLE_SIGNATURES] {
+        &self.signatures
+    }
+
+    // https://docs.wormhole.com/wormhole/explore-wormhole/vaa#signatures
+    pub fn ecrecover<CS: ConstraintSystem<E>>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<[(Boolean, (UInt256<E>, UInt256<E>)); NUM_WORMHOLE_SIGNATURES], SynthesisError>
+    {
+        let msg_hash = {
+            let bytes = self.body.to_bytes();
+            use crate::gadgets::keccak256::digest;
+            let hash1 = digest(cs, &bytes)?;
+            let hash2 = digest(cs, &hash1)?;
+            UInt256::from_be_bytes_fixed(cs, &hash2)?
+        };
+
+        let mut pubkeys: [_; NUM_WORMHOLE_SIGNATURES] = Default::default();
+        for i in 0..self.signatures.len() {
+            pubkeys[i] = self.signatures[i].ecrecover(cs, &msg_hash)?;
+        }
+        Ok(pubkeys)
     }
 }
 
@@ -220,7 +249,7 @@ pub struct WormholePayload<E: Engine> {
     pub payload_type: [Byte<E>; LEN_PAYLOAD_TYPE],
     pub slot: [Byte<E>; LEN_SLOT],
     pub ring_size: [Byte<E>; LEN_RING_SIZE],
-    pub root: keccak160::Hash<E>,
+    pub root: MerkleRoot<E>,
 }
 
 impl<E: Engine> WormholePayload<E> {
@@ -234,7 +263,10 @@ impl<E: Engine> WormholePayload<E> {
         offset += LEN_SLOT;
         let ring_size = bytes[offset..offset + LEN_RING_SIZE].try_into().unwrap();
         offset += LEN_RING_SIZE;
-        let root = bytes[offset..offset + LEN_ROOT].try_into().unwrap();
+        let root = {
+            let hash = bytes[offset..offset + LEN_ROOT].try_into().unwrap();
+            MerkleRoot::new(hash)
+        };
         Self {
             magic,
             payload_type,
@@ -265,7 +297,7 @@ impl<E: Engine> WormholePayload<E> {
         offset += LEN_SLOT;
         bytes[offset..offset + LEN_RING_SIZE].copy_from_slice(&self.ring_size);
         offset += LEN_RING_SIZE;
-        bytes[offset..offset + LEN_ROOT].copy_from_slice(&self.root);
+        bytes[offset..offset + LEN_ROOT].copy_from_slice(&self.root.inner());
         bytes
     }
 
@@ -284,7 +316,10 @@ impl<E: Engine> WormholePayload<E> {
             let bytes = payload.ring_size.to_be_bytes();
             CSAllocatable::alloc_from_witness(cs, Some(bytes))?
         };
-        let root = CSAllocatable::alloc_from_witness(cs, Some(payload.root))?;
+        let root = {
+            let root = CSAllocatable::alloc_from_witness(cs, Some(payload.root))?;
+            MerkleRoot::new(root)
+        };
         Ok(Self {
             magic,
             payload_type,
@@ -315,7 +350,7 @@ mod tests {
             bytes_assert_eq(&payload.payload_type, "00");
             bytes_assert_eq(&payload.slot, "00000000069b993c");
             bytes_assert_eq(&payload.ring_size, "00002710");
-            bytes_assert_eq(&payload.root, "095bb7e5fa374ea08603a6698123d99101547a50");
+            bytes_assert_eq(&payload.root.inner(), "095bb7e5fa374ea08603a6698123d99101547a50");
         }
 
         bytes_assert_eq(&payload.to_bytes(), hex_str);

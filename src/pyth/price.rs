@@ -5,10 +5,11 @@ use sync_vm::{
         bellman::{plonk::better_better_cs::cs::ConstraintSystem, SynthesisError},
         plonk::circuit::boolean::Boolean,
     },
+    traits::CSAllocatable,
 };
 
 use crate::{
-    gadgets::keccak160::{MerklePath, MerkleRoot},
+    gadgets::keccak160::{self, MerklePath, MerkleRoot},
     utils::new_synthesis_error,
 };
 
@@ -24,8 +25,45 @@ pub struct Update<E: Engine, const N: usize> {
 }
 
 impl<E: Engine, const N: usize> Update<E, N> {
-    pub fn new(message: PriceFeed<E>, proof: MerklePath<E, N>) -> Self {
-        Self { message, proof }
+    pub fn alloc_from_witness<CS: ConstraintSystem<E>>(
+        cs: &mut CS,
+        witness: pythnet_sdk::wire::v1::MerklePriceUpdate,
+    ) -> Result<Self, SynthesisError> {
+        use pythnet_sdk::messages::Message;
+        let message = {
+            let message: Vec<u8> = witness.message.into();
+            let price_feed = pythnet_sdk::wire::from_slice::<byteorder::BE, Message>(&message)
+                .map_err(new_synthesis_error)?;
+            PriceFeed::alloc_from_witness(cs, price_feed)?
+        };
+        let proof = {
+            let proof = witness.proof.to_bytes();
+            if proof.len() != N * keccak160::WIDTH_HASH_BYTES {
+                return Err(new_synthesis_error(format!(
+                    "invalid proof length {}, expect {}",
+                    proof.len(),
+                    N * keccak160::WIDTH_HASH_BYTES
+                )));
+            }
+
+            let merkle_paths: [[u8; keccak160::WIDTH_HASH_BYTES]; N] = proof
+                .chunks_exact(keccak160::WIDTH_HASH_BYTES)
+                .map(|chunk| chunk.try_into().unwrap())
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
+
+            let merkle_paths = merkle_paths
+                .into_iter()
+                .map(|hash| keccak160::Hash::alloc_from_witness(cs, Some(hash)))
+                .collect::<Result<Vec<_>, _>>()?
+                .try_into()
+                .unwrap();
+
+            MerklePath(merkle_paths)
+        };
+        // let merkle_paths = MerklePath::new(merkle_paths.try_into().unwrap());
+        Ok(Self { message, proof })
     }
 
     pub fn check<CS: ConstraintSystem<E>>(
@@ -48,7 +86,7 @@ pub struct AccumulatorUpdates<E: Engine, const M: usize, const N: usize> {
 
 impl<E: Engine, const M: usize, const N: usize> AccumulatorUpdates<E, M, N> {
     pub fn check<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<Boolean, SynthesisError> {
-        let root = MerkleRoot::new(self.wormhole_message.body.payload.root.clone());
+        let root = self.wormhole_message.merkle_root();
         let mut result = Boolean::constant(true);
         for update in self.updates.iter() {
             let check = update.check(cs, &root)?;
@@ -90,6 +128,61 @@ pub struct PriceFeed<E: Engine> {
 }
 
 impl<E: Engine> PriceFeed<E> {
+    pub fn alloc_from_witness<CS: ConstraintSystem<E>>(
+        cs: &mut CS,
+        witness: pythnet_sdk::messages::Message,
+    ) -> Result<Self, SynthesisError> {
+        let witness = match witness {
+            pythnet_sdk::messages::Message::PriceFeedMessage(p) => p,
+            _ => return Err(new_synthesis_error("invalid message type")),
+        };
+        let price_feed_type = [Byte::<E>::alloc_from_witness(cs, Some(0u8))?];
+        let feed_id = {
+            let bytes = witness.feed_id;
+            CSAllocatable::alloc_from_witness(cs, Some(bytes))?
+        };
+        let price = {
+            let bytes = witness.price.to_be_bytes();
+            CSAllocatable::alloc_from_witness(cs, Some(bytes))?
+        };
+        let conf = {
+            let bytes = witness.conf.to_be_bytes();
+            CSAllocatable::alloc_from_witness(cs, Some(bytes))?
+        };
+        let exponent = {
+            let bytes = witness.exponent.to_be_bytes();
+            CSAllocatable::alloc_from_witness(cs, Some(bytes))?
+        };
+        let publish_time = {
+            let bytes = witness.publish_time.to_be_bytes();
+            CSAllocatable::alloc_from_witness(cs, Some(bytes))?
+        };
+        let prev_publish_time = {
+            let bytes = witness.prev_publish_time.to_be_bytes();
+            CSAllocatable::alloc_from_witness(cs, Some(bytes))?
+        };
+        let ema_price = {
+            let bytes = witness.ema_price.to_be_bytes();
+            CSAllocatable::alloc_from_witness(cs, Some(bytes))?
+        };
+        let ema_conf = {
+            let bytes = witness.ema_conf.to_be_bytes();
+            CSAllocatable::alloc_from_witness(cs, Some(bytes))?
+        };
+        Ok(Self {
+            price_feed_type,
+            feed_id,
+            price,
+            conf,
+            exponent,
+            publish_time,
+            prev_publish_time,
+            ema_price,
+            ema_conf,
+        })
+    }
+
+    // TODO: delete
     pub fn new(bytes: [Byte<E>; LEN_PRICE_FEED]) -> Self {
         let mut offset = 0 as usize;
         let price_feed_type = bytes[offset..offset + LEN_PRICE_FEED_TYPE]
@@ -131,6 +224,7 @@ impl<E: Engine> PriceFeed<E> {
         Ok(Self::new(bytes))
     }
 
+    // TODO: add cs as parameter
     pub fn to_bytes(&self) -> [Byte<E>; LEN_PRICE_FEED] {
         let mut bytes = [Byte::<E>::zero(); LEN_PRICE_FEED];
         let mut offset = 0 as usize;
@@ -157,11 +251,19 @@ impl<E: Engine> PriceFeed<E> {
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::{bytes_constant_from_hex_str, testing::bytes_assert_eq};
+    use crate::{
+        gadgets::keccak160,
+        utils::{
+            bytes_constant_from_hex_str,
+            testing::{bytes_assert_eq, create_test_constraint_system},
+        },
+    };
     use pairing::bn256::Bn256;
-    use sync_vm::franklin_crypto::bellman::SynthesisError;
+    use pythnet_sdk::wire::from_slice;
+    use sync_vm::franklin_crypto::{bellman::SynthesisError, plonk::circuit::boolean::Boolean};
 
     #[test]
+    // TODO: rename
     fn tset_price_feed() -> Result<(), SynthesisError> {
         let hex_str = "00e62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b4300000352813ebdc00000000042eeb9f6fffffff800000000655ccff700000000655ccff700000356d0a75ce0000000005b0d7112";
         let bytes = bytes_constant_from_hex_str::<Bn256>(hex_str).unwrap();
@@ -181,6 +283,45 @@ mod tests {
             bytes_assert_eq(&price_feed.ema_conf, "000000005b0d7112");
         }
         bytes_assert_eq(&price_feed.to_bytes(), hex_str);
+        Ok(())
+    }
+
+    #[test]
+    fn test_price_feed_alloc_from_witness() -> Result<(), SynthesisError> {
+        let cs = &mut create_test_constraint_system()?;
+        let hex_str = "00e62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b4300000352813ebdc00000000042eeb9f6fffffff800000000655ccff700000000655ccff700000356d0a75ce0000000005b0d7112";
+        let data = hex::decode(hex_str).unwrap();
+        let price_feed = {
+            let p = from_slice::<byteorder::BE, pythnet_sdk::messages::Message>(&data).unwrap();
+            super::PriceFeed::alloc_from_witness(cs, p)?
+        };
+        let bytes = price_feed.to_bytes();
+        bytes_assert_eq(&bytes, hex_str);
+        Ok(())
+    }
+
+    #[test]
+    fn test_update_alloc_from_witness() -> Result<(), SynthesisError> {
+        let cs = &mut create_test_constraint_system()?;
+        let hex_str = "005500e62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b4300000352813ebdc00000000042eeb9f6fffffff800000000655ccff700000000655ccff700000356d0a75ce0000000005b0d71120ad97a31be8c09393bfbcd8cc36a4c486949eaab2bbe6e19294367c1689b7521ba31bcd504b01db4a0c74a56d137795aefe2df9137c1a7d82af648cb8aeece3482a0d6194ec36d2dab3b491296f5d9947b5b87bac5e58c2760c4677e0bb994618fb5c5d853fecc55351cd68a5029d4bc2b6f9ab5c23e7b9462af514a8475ffa181ea1216d2a8f3447464f8685f9b935ce5124e872d4a8b9ea16f9487952dff1ce6a2ef5e724d4da1e5f2bf897e52ac6a31ac60868776163f6ab8f1d74214184da7952bc731ff51f01f";
+        let data = hex::decode(hex_str).unwrap();
+        let update =
+            from_slice::<byteorder::BE, pythnet_sdk::wire::v1::MerklePriceUpdate>(&data).unwrap();
+        let update = super::Update::<Bn256, 10>::alloc_from_witness(cs, update)?;
+        {
+            let root = {
+                use sync_vm::traits::CSAllocatable;
+
+                let hash = hex::decode("095bb7e5fa374ea08603a6698123d99101547a50")
+                    .unwrap()
+                    .try_into()
+                    .unwrap();
+                let hash = keccak160::Hash::alloc_from_witness(cs, Some(hash))?;
+                keccak160::MerkleRoot::new(hash)
+            };
+            let check = update.check(cs, &root)?;
+            Boolean::enforce_equal(cs, &check, &Boolean::constant(true))?;
+        }
         Ok(())
     }
 }

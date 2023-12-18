@@ -102,6 +102,7 @@ impl<E: Engine> Signature<E> {
 
     /// 0  .. 64: r || s
     /// 64 .. 65: recid
+    // TODO: rename to bytes
     pub fn alloc_from_bytes_witness<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         witness: &[u8],

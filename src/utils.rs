@@ -5,6 +5,7 @@ use std::str::FromStr;
 use sync_vm::circuit_structures::byte::Byte;
 use sync_vm::franklin_crypto::bellman::SynthesisError;
 use sync_vm::franklin_crypto::plonk::circuit::boolean::Boolean;
+use sync_vm::traits::CSAllocatable;
 use sync_vm::{
     franklin_crypto::{
         bellman::plonk::better_better_cs::cs::ConstraintSystem, plonk::circuit::allocated_num::Num,
@@ -57,6 +58,15 @@ pub fn uint256_from_bytes<E: Engine, CS: ConstraintSystem<E>>(
     chunks_be_arr.copy_from_slice(&bytes[..]);
     let uint256 = UInt256::from_be_bytes_fixed(cs, &chunks_be_arr)?;
     Ok(uint256)
+}
+
+// TODO: rename witness
+pub fn uint256_from_bytes_witness<E: Engine, CS: ConstraintSystem<E>>(
+    cs: &mut CS,
+    bytes: &[u8],
+) -> Result<UInt256<E>, SynthesisError> {
+    let uint256 = BigUint::from_bytes_be(bytes);
+    UInt256::alloc_from_witness(cs, Some(uint256))
 }
 
 pub fn uint256_and_num_from_repr_witness<E: Engine, CS: ConstraintSystem<E>>(

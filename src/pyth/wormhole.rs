@@ -1,12 +1,19 @@
 use pairing::Engine;
 use sync_vm::{
     circuit_structures::byte::Byte,
-    franklin_crypto::bellman::{plonk::better_better_cs::cs::ConstraintSystem, SynthesisError},
+    franklin_crypto::{
+        bellman::{plonk::better_better_cs::cs::ConstraintSystem, SynthesisError},
+        plonk::circuit::boolean::Boolean,
+    },
     traits::CSAllocatable,
+    vm::primitives::uint256::UInt256,
 };
 
 use crate::{
-    gadgets::{ecdsa::Signature, keccak160::{self, MerkleRoot}},
+    gadgets::{
+        ecdsa::Signature,
+        keccak160::{self, MerkleRoot},
+    },
     params::NUM_WORMHOLE_SIGNATURES,
     utils::new_synthesis_error,
 };
@@ -350,7 +357,10 @@ mod tests {
             bytes_assert_eq(&payload.payload_type, "00");
             bytes_assert_eq(&payload.slot, "00000000069b993c");
             bytes_assert_eq(&payload.ring_size, "00002710");
-            bytes_assert_eq(&payload.root.inner(), "095bb7e5fa374ea08603a6698123d99101547a50");
+            bytes_assert_eq(
+                &payload.root.inner(),
+                "095bb7e5fa374ea08603a6698123d99101547a50",
+            );
         }
 
         bytes_assert_eq(&payload.to_bytes(), hex_str);
@@ -413,7 +423,7 @@ mod tests {
         let vaa: wormhole_sdk::Vaa<&serde_wormhole::RawMessage> =
             serde_wormhole::from_slice(&data).unwrap();
         let _ = super::WormholeMessage::<_>::alloc_from_witness(cs, vaa)?;
-         
+
         // let (_, body): (_, wormhole_sdk::vaa::Body<_>) = vaa.into();
         // let expected = hex::encode(serde_wormhole::to_vec(&body).unwrap());
         // let body = super::WormholeBody::<_>::alloc_from_witness(cs, body)?;

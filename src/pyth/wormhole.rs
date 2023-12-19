@@ -14,7 +14,6 @@ use crate::{
         ecdsa::Signature,
         keccak160::{self, MerkleRoot},
     },
-    params::NUM_WORMHOLE_SIGNATURES,
     utils::new_synthesis_error,
 };
 
@@ -25,28 +24,30 @@ use crate::{
 // - https://docs.wormhole.com/wormhole/explore-wormhole/vaa
 // - https://github.com/wormhole-foundation/wormhole/blob/bfd4ba40ef2d213ad69bac638c72009ba4a07878/sdk/rust/core/src/vaa.rs#L84-L100
 #[derive(Debug, Clone)]
-pub struct WormholeMessage<E: Engine> {
-    pub signatures: [Signature<E>; NUM_WORMHOLE_SIGNATURES],
-    pub body: WormholeBody<E>,
+pub struct Vaa<E: Engine, const N: usize> {
+    pub signatures: [Signature<E>; N],
+    pub body: VaaBody<E>,
 }
 
-impl<E: Engine> WormholeMessage<E> {
+impl<E: Engine, const N: usize> Vaa<E, N> {
+    // len for signature must be at least N
     pub fn from_vaa_witness<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         message: wormhole_sdk::Vaa<&serde_wormhole::RawMessage>,
     ) -> Result<Self, SynthesisError> {
         let (header, body): (wormhole_sdk::vaa::Header, wormhole_sdk::vaa::Body<_>) =
             message.into();
-        let body = WormholeBody::from_vaa_body_witness(cs, body)?;
-        if header.signatures.len() < NUM_WORMHOLE_SIGNATURES {
+        let body = VaaBody::from_vaa_body_witness(cs, body)?;
+        println!("header signatures len: {}", header.signatures.len());
+        if header.signatures.len() < N {
             return Err(new_synthesis_error(format!(
                 "Only have {} signature. expect {} at least",
                 header.signatures.len(),
-                NUM_WORMHOLE_SIGNATURES
+                N
             )));
         }
 
-        let signatures = (0..NUM_WORMHOLE_SIGNATURES)
+        let signatures = (0..N)
             .into_iter()
             .map(|i| {
                 let signature = header.signatures[i].signature;
@@ -64,7 +65,7 @@ impl<E: Engine> WormholeMessage<E> {
         &self.body.payload.root
     }
 
-    pub fn signatures(&self) -> &[Signature<E>; NUM_WORMHOLE_SIGNATURES] {
+    pub fn signatures(&self) -> &[Signature<E>; N] {
         &self.signatures
     }
 
@@ -72,8 +73,7 @@ impl<E: Engine> WormholeMessage<E> {
     pub fn ecrecover<CS: ConstraintSystem<E>>(
         &self,
         cs: &mut CS,
-    ) -> Result<[(Boolean, (UInt256<E>, UInt256<E>)); NUM_WORMHOLE_SIGNATURES], SynthesisError>
-    {
+    ) -> Result<[(Boolean, (UInt256<E>, UInt256<E>)); N], SynthesisError> {
         let msg_hash = {
             let bytes = self.body.to_bytes();
             use crate::gadgets::keccak256::digest;
@@ -82,7 +82,7 @@ impl<E: Engine> WormholeMessage<E> {
             UInt256::from_be_bytes_fixed(cs, &hash2)?
         };
 
-        let mut pubkeys: [_; NUM_WORMHOLE_SIGNATURES] = Default::default();
+        let mut pubkeys = [Default::default(); N];
         for i in 0..self.signatures.len() {
             pubkeys[i] = self.signatures[i].ecrecover(cs, &msg_hash)?;
         }
@@ -104,7 +104,7 @@ const LEN_WORMHOLE_BODY: usize = LEN_WORMHOLE_BODY_TIMESTAMP
     + LEN_WORMHOLE_BODY_CONSISTENCY_LEVEL
     + LEN_MESSAGE;
 #[derive(Debug, Clone)]
-pub struct WormholeBody<E: Engine> {
+pub struct VaaBody<E: Engine> {
     pub timestamp: [Byte<E>; LEN_WORMHOLE_BODY_TIMESTAMP],
     pub nonce: [Byte<E>; LEN_WORMHOLE_BODY_NONCE],
     pub emitter_chain: [Byte<E>; LEN_WORMHOLE_BODY_EMITTER_CHAIN],
@@ -117,7 +117,7 @@ pub struct WormholeBody<E: Engine> {
 // Circuit representation of body in wormhole VAA.
 // - https://docs.wormhole.com/wormhole/explore-wormhole/vaa#body
 // - https://github.com/wormhole-foundation/wormhole/blob/bfd4ba40ef2d213ad69bac638c72009ba4a07878/sdk/rust/core/src/vaa.rs#L112-L121
-impl<E: Engine> WormholeBody<E> {
+impl<E: Engine> VaaBody<E> {
     pub fn new(bytes: [Byte<E>; LEN_WORMHOLE_BODY]) -> Self {
         let mut offset = 0;
         let timestamp = bytes[offset..offset + LEN_WORMHOLE_BODY_TIMESTAMP]
@@ -310,11 +310,11 @@ impl<E: Engine> WormholePayload<E> {
 
     pub fn from_wormhole_message_witness<CS: ConstraintSystem<E>>(
         cs: &mut CS,
-        message: pythnet_sdk::wire::v1::WormholeMessage,
+        witness: pythnet_sdk::wire::v1::WormholeMessage,
     ) -> Result<Self, SynthesisError> {
-        let magic = CSAllocatable::alloc_from_witness(cs, Some(message.magic))?;
+        let magic = CSAllocatable::alloc_from_witness(cs, Some(witness.magic))?;
         let payload_type = CSAllocatable::alloc_from_witness(cs, Some([PAYLOAD_TYPE]))?;
-        let pythnet_sdk::wire::v1::WormholePayload::Merkle(payload) = message.payload;
+        let pythnet_sdk::wire::v1::WormholePayload::Merkle(payload) = witness.payload;
         let slot = {
             let bytes = payload.slot.to_be_bytes();
             CSAllocatable::alloc_from_witness(cs, Some(bytes))?
@@ -382,7 +382,7 @@ mod tests {
     fn test_wormhole_body() -> Result<(), SynthesisError> {
         let hex_str = "655ccff800000000001ae101faedac5851e32b9b23b5f9411a8c2bac4aae3ed4dd7b811dd1a72ea4aa71000000000195faa401415557560000000000069b993c00002710095bb7e5fa374ea08603a6698123d99101547a50";
         let bytes = bytes_constant_from_hex_str::<Bn256>(hex_str)?;
-        let body = super::WormholeBody::new_from_slice(&bytes)?;
+        let body = super::VaaBody::new_from_slice(&bytes)?;
         {
             bytes_assert_eq(&body.timestamp, "655ccff8");
             bytes_assert_eq(&body.nonce, "00000000");
@@ -404,7 +404,7 @@ mod tests {
     }
 
     #[test]
-    fn test_payload_alloc_from_witness() -> Result<(), SynthesisError> {
+    fn test_wormhole_payload_from_witness() -> Result<(), SynthesisError> {
         let cs = &mut create_test_constraint_system()?;
         let hex_str = "415557560000000000069b993c00002710095bb7e5fa374ea08603a6698123d99101547a50";
         let data = hex::decode(hex_str).unwrap();
@@ -415,30 +415,30 @@ mod tests {
     }
 
     #[test]
-    fn test_body_alloc_from_witness() -> Result<(), SynthesisError> {
+    fn test_wormhole_body_from_witness() -> Result<(), SynthesisError> {
         let cs = &mut create_test_constraint_system()?;
         let data = hex::decode(get_vaa()).unwrap();
         let vaa: wormhole_sdk::Vaa<&serde_wormhole::RawMessage> =
             serde_wormhole::from_slice(&data).unwrap();
         let (_, body): (_, wormhole_sdk::vaa::Body<_>) = vaa.into();
         let expected = hex::encode(serde_wormhole::to_vec(&body).unwrap());
-        let body = super::WormholeBody::<_>::from_vaa_body_witness(cs, body)?;
+        let body = super::VaaBody::<_>::from_vaa_body_witness(cs, body)?;
         bytes_assert_eq(&body.to_bytes(), expected);
         Ok(())
     }
 
     #[test]
-    fn test_vaa_alloc_from_witness() -> Result<(), SynthesisError> {
+    fn test_wormhole_message_from_witness() -> Result<(), SynthesisError> {
         let cs = &mut create_test_constraint_system()?;
         let data = hex::decode(get_vaa()).unwrap();
         let vaa: wormhole_sdk::Vaa<&serde_wormhole::RawMessage> =
             serde_wormhole::from_slice(&data).unwrap();
-        let _ = super::WormholeMessage::<_>::from_vaa_witness(cs, vaa)?;
-
-        // let (_, body): (_, wormhole_sdk::vaa::Body<_>) = vaa.into();
-        // let expected = hex::encode(serde_wormhole::to_vec(&body).unwrap());
-        // let body = super::WormholeBody::<_>::alloc_from_witness(cs, body)?;
-        // bytes_assert_eq(&body.to_bytes(), expected);
+        use super::Vaa;
+        assert_eq!(vaa.signatures.len(), 13);
+        assert!(Vaa::<_, 1>::from_vaa_witness(cs, vaa.clone()).is_ok());
+        assert!(Vaa::<_, 7>::from_vaa_witness(cs, vaa.clone()).is_ok());
+        assert!(Vaa::<_, 13>::from_vaa_witness(cs, vaa.clone()).is_ok());
+        assert!(Vaa::<_, 20>::from_vaa_witness(cs, vaa).is_err());
         Ok(())
     }
 

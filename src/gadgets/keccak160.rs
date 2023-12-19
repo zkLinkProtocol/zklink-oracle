@@ -13,7 +13,6 @@ use sync_vm::{
 use crate::utils::{new_synthesis_error, num_from_be_bytes};
 
 pub const WIDTH_HASH_BYTES: usize = 20;
-pub const WIDTH_HASH_BITS: usize = WIDTH_HASH_BYTES * 8;
 pub type Hash<E> = [Byte<E>; WIDTH_HASH_BYTES];
 
 pub fn hash_from_slice<E: Engine>(bytes: &[Byte<E>]) -> Result<Hash<E>, SynthesisError> {
@@ -91,7 +90,8 @@ impl<E: Engine> MerkleRoot<E> {
     ) -> Result<Hash<E>, SynthesisError> {
         let ln = num_from_be_bytes(cs, &l)?;
         let rn = num_from_be_bytes(cs, &r)?;
-        let (_, l_is_greater) = prepacked_long_comparison(cs, &[ln], &[rn], &[WIDTH_HASH_BITS])?;
+        let (_, l_is_greater) =
+            prepacked_long_comparison(cs, &[ln], &[rn], &[WIDTH_HASH_BYTES * 8])?;
         let (l, r): (Hash<_>, Hash<_>) = {
             let zipped = (0..WIDTH_HASH_BYTES)
                 .into_iter()

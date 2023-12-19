@@ -13,7 +13,7 @@ use crate::{
     utils::new_synthesis_error,
 };
 
-use super::wormhole::WormholeMessage;
+use super::wormhole::Vaa;
 
 // const UPDATE_BYTES_LEN: usize = 2 + 85 + 1 + 10 * 20;
 // Circuit representation of pyth `PriceUpdate`
@@ -79,15 +79,21 @@ impl<E: Engine, const N: usize> Update<E, N> {
 // Circuit representation of pyth `AccumulatorUpdate`
 // - https://github.com/pyth-network/pyth-crosschain/blob/178ad4cb0edff38f43d8e26f23d1d9e83448093c/pythnet/pythnet_sdk/src/wire.rs#L60-L66
 // - https://github.com/pyth-network/pyth-client-py/blob/d6571704433f044dfa6881e7b76f629f6e194482/pythclient/price_feeds.py#L710-L804
+// TODO: comment: meaning of generic
+// N1: merkle path
+// N2: price number
+// N3: signature numbers
 #[derive(Debug, Clone)]
-pub struct AccumulatorUpdates<E: Engine, const M: usize, const N: usize> {
-    pub wormhole_message: WormholeMessage<E>,
-    pub updates: [Update<E, M>; N],
+pub struct AccumulatorUpdates<E: Engine, const N1: usize, const N2: usize, const N3: usize> {
+    pub vaa: Vaa<E, N3>,
+    pub updates: [Update<E, N1>; N2],
 }
 
-impl<E: Engine, const M: usize, const N: usize> AccumulatorUpdates<E, M, N> {
+impl<E: Engine, const N1: usize, const N2: usize, const N3: usize>
+    AccumulatorUpdates<E, N1, N2, N3>
+{
     pub fn check<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<Boolean, SynthesisError> {
-        let root = self.wormhole_message.merkle_root();
+        let root = self.vaa.merkle_root();
         let mut result = Boolean::constant(true);
         for update in self.updates.iter() {
             let check = update.check(cs, &root)?;

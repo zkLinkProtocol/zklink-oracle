@@ -1,5 +1,5 @@
 use pairing::Engine;
-use pyth::WormholeMessage;
+use pyth::{Update, Vaa};
 use sync_vm::{
     franklin_crypto::{
         bellman::{plonk::better_better_cs::cs::ConstraintSystem, SynthesisError},
@@ -14,10 +14,10 @@ pub mod params;
 pub mod pyth;
 pub mod utils;
 
-pub fn check_price_updates<E: Engine, CS: ConstraintSystem<E>>(
+pub fn check_price_updates<E: Engine, CS: ConstraintSystem<E>, const N1: usize, const N2: usize>(
     cs: &mut CS,
-    vaa: &WormholeMessage<E>,
-    updates: &[pyth::Update<E>],
+    vaa: &Vaa<E, N2>,
+    updates: &[Update<E, N1>],
     guardian_set: &[(UInt256<E>, UInt256<E>)],
 ) -> Result<Boolean, SynthesisError> {
     if guardian_set.len() == 0 {
@@ -72,7 +72,9 @@ mod testss {
     };
 
     use crate::{
-        check_price_updates, pyth,
+        check_price_updates,
+        params::DEEPTH_MERKLE_TREE,
+        pyth,
         utils::{
             new_synthesis_error, testing::create_test_constraint_system, uint256_from_bytes_witness,
         },
@@ -97,7 +99,7 @@ mod testss {
                 let vaa = {
                     let vaa: wormhole_sdk::Vaa<&serde_wormhole::RawMessage> =
                         serde_wormhole::from_slice(&vaa.as_ref()).unwrap();
-                    crate::pyth::WormholeMessage::<_>::from_vaa_witness(cs, vaa)?
+                    crate::pyth::Vaa::<_, 1>::from_vaa_witness(cs, vaa)?
                 };
                 let guardian_set = pubkeys
                     .iter()
@@ -106,7 +108,8 @@ mod testss {
                 let updates = updates
                     .into_iter()
                     .map(|u| {
-                        let update = pyth::Update::<_>::from_price_update_witness(cs, u);
+                        let update =
+                            pyth::Update::<_, DEEPTH_MERKLE_TREE>::from_price_update_witness(cs, u);
                         update
                     })
                     .collect::<Result<Vec<_>, _>>()?;

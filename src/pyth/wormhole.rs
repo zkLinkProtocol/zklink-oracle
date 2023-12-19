@@ -131,6 +131,9 @@ const LEN_WORMHOLE_BODY: usize = LEN_WORMHOLE_BODY_TIMESTAMP
     + LEN_WORMHOLE_BODY_CONSISTENCY_LEVEL
     + LEN_MESSAGE;
 #[derive(Debug, Clone)]
+/// Circuit representation of body in wormhole VAA [`Body<P>`](https://github.com/wormhole-foundation/wormhole/blob/bfd4ba40ef2d213ad69bac638c72009ba4a07878/sdk/rust/core/src/vaa.rs#L110-L121).
+///
+/// Visit [VAAs documentation](https://docs.wormhole.com/wormhole/explore-wormhole/vaa#body) for more.
 pub struct VaaBody<E: Engine> {
     pub timestamp: [Byte<E>; LEN_WORMHOLE_BODY_TIMESTAMP],
     pub nonce: [Byte<E>; LEN_WORMHOLE_BODY_NONCE],
@@ -138,62 +141,10 @@ pub struct VaaBody<E: Engine> {
     pub emitter_address: [Byte<E>; LEN_WORMHOLE_BODY_EMITTER_ADDRESS],
     pub sequence: [Byte<E>; LEN_WORMHOLE_BODY_SEQUENCE],
     pub consistency_level: [Byte<E>; LEN_WORMHOLE_BODY_CONSISTENCY_LEVEL],
-    pub payload: WormholePayload<E>,
+    pub payload: VaaPayload<E>,
 }
 
-// Circuit representation of body in wormhole VAA.
-// - https://docs.wormhole.com/wormhole/explore-wormhole/vaa#body
-// - https://github.com/wormhole-foundation/wormhole/blob/bfd4ba40ef2d213ad69bac638c72009ba4a07878/sdk/rust/core/src/vaa.rs#L112-L121
 impl<E: Engine> VaaBody<E> {
-    pub fn new(bytes: [Byte<E>; LEN_WORMHOLE_BODY]) -> Self {
-        let mut offset = 0;
-        let timestamp = bytes[offset..offset + LEN_WORMHOLE_BODY_TIMESTAMP]
-            .try_into()
-            .unwrap();
-        offset += LEN_WORMHOLE_BODY_TIMESTAMP;
-        let nonce = bytes[offset..offset + LEN_WORMHOLE_BODY_NONCE]
-            .try_into()
-            .unwrap();
-        offset += LEN_WORMHOLE_BODY_NONCE;
-        let emitter_chain = bytes[offset..offset + LEN_WORMHOLE_BODY_EMITTER_CHAIN]
-            .try_into()
-            .unwrap();
-        offset += LEN_WORMHOLE_BODY_EMITTER_CHAIN;
-        let emitter_address = bytes[offset..offset + LEN_WORMHOLE_BODY_EMITTER_ADDRESS]
-            .try_into()
-            .unwrap();
-        offset += LEN_WORMHOLE_BODY_EMITTER_ADDRESS;
-        let sequence = bytes[offset..offset + LEN_WORMHOLE_BODY_SEQUENCE]
-            .try_into()
-            .unwrap();
-        offset += LEN_WORMHOLE_BODY_SEQUENCE;
-        let consistency_level = bytes[offset..offset + LEN_WORMHOLE_BODY_CONSISTENCY_LEVEL]
-            .try_into()
-            .unwrap();
-        offset += LEN_WORMHOLE_BODY_CONSISTENCY_LEVEL;
-        let payload = WormholePayload::new(bytes[offset..offset + LEN_MESSAGE].try_into().unwrap());
-        Self {
-            timestamp,
-            nonce,
-            emitter_chain,
-            emitter_address,
-            sequence,
-            consistency_level,
-            payload,
-        }
-    }
-
-    pub fn new_from_slice(bytes: &[Byte<E>]) -> Result<Self, SynthesisError> {
-        if bytes.len() != LEN_WORMHOLE_BODY {
-            return Err(new_synthesis_error(format!(
-                "invalid bytes length {}, expect {}",
-                bytes.len(),
-                LEN_MESSAGE
-            )));
-        }
-        Ok(Self::new(bytes.try_into().unwrap()))
-    }
-
     pub fn to_bytes(&self) -> [Byte<E>; LEN_WORMHOLE_BODY] {
         let mut bytes = [Byte::<E>::zero(); LEN_WORMHOLE_BODY];
         let mut offset = 0;
@@ -254,7 +205,7 @@ impl<E: Engine> VaaBody<E> {
             let payload =
                 pythnet_sdk::wire::v1::WormholeMessage::try_from_bytes(witness.payload.as_ref())
                     .map_err(new_synthesis_error)?;
-            WormholePayload::from_wormhole_message_witness(cs, payload)?
+            VaaPayload::from_wormhole_message_witness(cs, payload)?
         };
         Ok(Self {
             timestamp,
@@ -277,7 +228,7 @@ const LEN_MESSAGE: usize = LEN_MAGIC + LEN_PAYLOAD_TYPE + LEN_SLOT + LEN_RING_SI
 const PAYLOAD_TYPE: u8 = 0; // Fixed payload type for now.
 /// Representation of pyth-defined wormhole payload [`WormholeMessage`](https://github.com/pyth-network/pyth-crosschain/blob/1d82f92d80598e689f4130983d06b12412b83427/pythnet/pythnet_sdk/src/wire.rs#L108-L112).
 #[derive(Debug, Clone)]
-pub struct WormholePayload<E: Engine> {
+pub struct VaaPayload<E: Engine> {
     pub magic: [Byte<E>; LEN_MAGIC],
     pub payload_type: [Byte<E>; LEN_PAYLOAD_TYPE],
     pub slot: [Byte<E>; LEN_SLOT],
@@ -285,7 +236,7 @@ pub struct WormholePayload<E: Engine> {
     pub root: MerkleRoot<E>,
 }
 
-impl<E: Engine> WormholePayload<E> {
+impl<E: Engine> VaaPayload<E> {
     pub fn new(bytes: [Byte<E>; LEN_MESSAGE]) -> Self {
         let mut offset = 0;
         let magic = bytes[offset..offset + LEN_MAGIC].try_into().unwrap();
@@ -396,7 +347,7 @@ mod tests {
     fn test_wormhole_payload() -> Result<(), SynthesisError> {
         let hex_str = "415557560000000000069b993c00002710095bb7e5fa374ea08603a6698123d99101547a50";
         let bytes = bytes_constant_from_hex_str::<Bn256>(hex_str)?;
-        let payload = super::WormholePayload::new_from_slice(&bytes)?;
+        let payload = super::VaaPayload::new_from_slice(&bytes)?;
         {
             bytes_assert_eq(&payload.magic, "41555756");
             bytes_assert_eq(&payload.payload_type, "00");
@@ -443,7 +394,7 @@ mod tests {
         let hex_str = "415557560000000000069b993c00002710095bb7e5fa374ea08603a6698123d99101547a50";
         let data = hex::decode(hex_str).unwrap();
         let payload = pythnet_sdk::wire::v1::WormholeMessage::try_from_bytes(&data).unwrap();
-        let payload = super::WormholePayload::<_>::from_wormhole_message_witness(cs, payload)?;
+        let payload = super::VaaPayload::<_>::from_wormhole_message_witness(cs, payload)?;
         bytes_assert_eq(&payload.to_bytes(), hex_str);
         Ok(())
     }

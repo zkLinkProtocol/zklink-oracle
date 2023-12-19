@@ -52,7 +52,6 @@ pub fn uint256_from_bytes<E: Engine, CS: ConstraintSystem<E>>(
     Ok(uint256)
 }
 
-// TODO: rename witness
 pub fn uint256_from_bytes_witness<E: Engine, CS: ConstraintSystem<E>>(
     cs: &mut CS,
     bytes: &[u8],
@@ -63,9 +62,9 @@ pub fn uint256_from_bytes_witness<E: Engine, CS: ConstraintSystem<E>>(
 
 pub fn uint256_and_num_from_repr_witness<E: Engine, CS: ConstraintSystem<E>>(
     cs: &mut CS,
-    str: &str,
+    repr: &str,
 ) -> Result<(UInt256<E>, [Num<E>; 32]), SynthesisError> {
-    let biguint = BigUint::from_str(str).map_err(|e| {
+    let biguint = BigUint::from_str(repr).map_err(|e| {
         let err = std::io::Error::new(std::io::ErrorKind::Other, e);
         SynthesisError::from(err)
     })?;
@@ -74,16 +73,14 @@ pub fn uint256_and_num_from_repr_witness<E: Engine, CS: ConstraintSystem<E>>(
 
 pub fn uint256_from_repr_witness<E: Engine, CS: ConstraintSystem<E>>(
     cs: &mut CS,
-    str: &str,
+    repr: &str,
 ) -> Result<UInt256<E>, SynthesisError> {
-    Ok(uint256_and_num_from_repr_witness(cs, str)?.0)
+    Ok(uint256_and_num_from_repr_witness(cs, repr)?.0)
 }
 
 #[cfg(test)]
 pub mod testing {
-    use base64::Engine as _;
     use pairing::{bn256::Bn256, Engine};
-    use pythnet_sdk::wire::v1::AccumulatorUpdateData;
     use sync_vm::{
         circuit_structures::byte::Byte,
         franklin_crypto::{

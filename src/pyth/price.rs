@@ -6,6 +6,7 @@ use sync_vm::{
         plonk::circuit::boolean::Boolean,
     },
     traits::CSAllocatable,
+    vm::primitives::uint256::UInt256,
 };
 
 use crate::{
@@ -19,7 +20,7 @@ use super::wormhole::Vaa;
 ///
 /// `N` is the depth of merkle tree used by pyth, which is `10`` by now.
 #[derive(Debug, Clone)]
-pub struct PriceUpdate<E: Engine, const N: usize> {
+pub struct PriceUpdate<E: Engine, const N: usize = 10> {
     pub message: PriceFeed<E>,
     pub proof: MerklePath<E, N>,
 }
@@ -76,27 +77,36 @@ impl<E: Engine, const N: usize> PriceUpdate<E, N> {
     }
 }
 
-// Circuit representation of pyth `AccumulatorUpdate`
-// - https://github.com/pyth-network/pyth-crosschain/blob/178ad4cb0edff38f43d8e26f23d1d9e83448093c/pythnet/pythnet_sdk/src/wire.rs#L60-L66
-// - https://github.com/pyth-network/pyth-client-py/blob/d6571704433f044dfa6881e7b76f629f6e194482/pythclient/price_feeds.py#L710-L804
-// TODO: comment: meaning of generic
-// N1: merkle path
-// N2: price number
-// N3: signature numbers
+/// Circuit representation of pyth [`Proof`](https://github.com/pyth-network/pyth-crosschain/blob/178ad4cb0edff38f43d8e26f23d1d9e83448093c/pythnet/pythnet_sdk/src/wire.rs#L98-L104), the key filed in [`AccumulatorUpdateData`](https://github.com/pyth-network/pyth-crosschain/blob/178ad4cb0edff38f43d8e26f23d1d9e83448093c/pythnet/pythnet_sdk/src/wire.rs#L55-L66).
+///
+/// `N1` is the number of price updates. `N2` is the depth of pyth merkle tree (10 by now). `N3` is the number of wormhole signatures.
+///
+/// Visit [here](https://github.com/pyth-network/pyth-client-py/blob/d6571704433f044dfa6881e7b76f629f6e194482/pythclient/price_feeds.py#L710-L804) to see the deserializing way of [`AccumulatorUpdateData`](https://github.com/pyth-network/pyth-crosschain/blob/178ad4cb0edff38f43d8e26f23d1d9e83448093c/pythnet/pythnet_sdk/src/wire.rs#L55-L66).
 #[derive(Debug, Clone)]
-pub struct AccumulatorUpdates<E: Engine, const N1: usize, const N2: usize, const N3: usize> {
+pub struct PriceUpdates<E: Engine, const N1: usize, const N2: usize, const N3: usize> {
     pub vaa: Vaa<E, N3>,
-    pub updates: [Update<E, N1>; N2],
+    pub price_updates: [PriceUpdate<E, N2>; N1],
 }
 
-impl<E: Engine, const N1: usize, const N2: usize, const N3: usize>
-    AccumulatorUpdates<E, N1, N2, N3>
-{
-    pub fn check<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<Boolean, SynthesisError> {
+impl<E: Engine, const N1: usize, const N2: usize, const N3: usize> PriceUpdates<E, N1, N2, N3> {
+    pub fn check<CS: ConstraintSystem<E>>(
+        &self,
+        cs: &mut CS,
+        guardian_set: &[(UInt256<E>, UInt256<E>)],
+    ) -> Result<Boolean, SynthesisError> {
+        let valid_signatures = self.vaa.check(cs, guardian_set)?;
+        let valid_updates = self.check_updates(cs)?;
+        Boolean::and(cs, &valid_signatures, &valid_updates)
+    }
+
+    pub fn check_updates<CS: ConstraintSystem<E>>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Boolean, SynthesisError> {
         let root = self.vaa.merkle_root();
         let mut result = Boolean::constant(true);
-        for update in self.updates.iter() {
-            let check = update.check(cs, &root)?;
+        for price_update in self.price_updates.iter() {
+            let check = price_update.check(cs, &root)?;
             result = Boolean::and(cs, &result, &check)?;
         }
         Ok(result)

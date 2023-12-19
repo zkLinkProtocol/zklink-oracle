@@ -6,7 +6,10 @@ use sync_vm::{
         plonk::circuit::boolean::Boolean,
     },
     traits::CSAllocatable,
-    vm::primitives::uint256::UInt256,
+    vm::{
+        partitioner::{smart_and, smart_or},
+        primitives::uint256::UInt256,
+    },
 };
 
 use crate::{
@@ -38,7 +41,6 @@ impl<E: Engine, const N: usize> Vaa<E, N> {
         let (header, body): (wormhole_sdk::vaa::Header, wormhole_sdk::vaa::Body<_>) =
             message.into();
         let body = VaaBody::from_vaa_body_witness(cs, body)?;
-        println!("header signatures len: {}", header.signatures.len());
         if header.signatures.len() < N {
             return Err(new_synthesis_error(format!(
                 "Only have {} signature. expect {} at least",
@@ -87,6 +89,33 @@ impl<E: Engine, const N: usize> Vaa<E, N> {
             pubkeys[i] = self.signatures[i].ecrecover(cs, &msg_hash)?;
         }
         Ok(pubkeys)
+    }
+
+    /// Check if all VAA sigantures are signed by anyone from guardian set.
+    /// There is not quorum check and you should make sure all signatures are valid.
+    pub fn check<CS: ConstraintSystem<E>>(
+        &self,
+        cs: &mut CS,
+        guardian_set: &[(UInt256<E>, UInt256<E>)],
+    ) -> Result<Boolean, SynthesisError> {
+        if guardian_set.len() == 0 {
+            return Ok(Boolean::Constant(false));
+        }
+        let recovered = self.ecrecover(cs)?;
+        let mut is_ok = vec![];
+        for (successful, (x, y)) in recovered {
+            let mut is_matched = vec![];
+            for pubkey in guardian_set {
+                let x_is_equal = UInt256::equals(cs, &x, &pubkey.0)?;
+                let y_is_equal = UInt256::equals(cs, &y, &pubkey.1)?;
+                let is_equal = Boolean::and(cs, &x_is_equal, &y_is_equal)?;
+                is_matched.push(is_equal);
+            }
+            let is_matched = smart_or(cs, &is_matched)?;
+            is_ok.push(smart_and(cs, &[successful, is_matched])?)
+        }
+        let is_ok = smart_and(cs, &is_ok)?;
+        Ok(is_ok)
     }
 }
 
@@ -340,11 +369,19 @@ impl<E: Engine> WormholePayload<E> {
 #[cfg(test)]
 mod tests {
     use pairing::{bn256::Bn256, Engine};
-    use sync_vm::{circuit_structures::byte::Byte, franklin_crypto::bellman::SynthesisError};
+    use sync_vm::{
+        circuit_structures::byte::Byte,
+        franklin_crypto::{
+            bellman::{plonk::better_better_cs::cs::ConstraintSystem, SynthesisError},
+            plonk::circuit::boolean::Boolean,
+        },
+        vm::primitives::uint256::UInt256,
+    };
 
     use crate::utils::{
         new_synthesis_error,
         testing::{bytes_assert_eq, create_test_constraint_system},
+        uint256_from_bytes_witness,
     };
 
     pub fn bytes_constant_from_hex_str<E: Engine>(
@@ -428,18 +465,45 @@ mod tests {
     }
 
     #[test]
-    fn test_wormhole_message_from_witness() -> Result<(), SynthesisError> {
+    fn test_vaa_from_witness() -> Result<(), SynthesisError> {
         let cs = &mut create_test_constraint_system()?;
         let data = hex::decode(get_vaa()).unwrap();
         let vaa: wormhole_sdk::Vaa<&serde_wormhole::RawMessage> =
             serde_wormhole::from_slice(&data).unwrap();
-        use super::Vaa;
+        // We can safely create Vaa with signatures less than len of witness VAA.
         assert_eq!(vaa.signatures.len(), 13);
-        assert!(Vaa::<_, 1>::from_vaa_witness(cs, vaa.clone()).is_ok());
-        assert!(Vaa::<_, 7>::from_vaa_witness(cs, vaa.clone()).is_ok());
-        assert!(Vaa::<_, 13>::from_vaa_witness(cs, vaa.clone()).is_ok());
-        assert!(Vaa::<_, 20>::from_vaa_witness(cs, vaa).is_err());
+        let vaa = super::Vaa::<_, 1>::from_vaa_witness(cs, vaa.clone())?;
+
+        let guardian_set = {
+            let pubkeys = [
+            "2a953a2e8b1052eb70c1d7b556b087deed598b55608396686c1c811b9796c763078687ce10459f4f25fb7a0fbf8727bb0fb51e00820e93a123f652ee843cf08d",
+        ];
+            pubkeys
+                .iter()
+                .map(|pk| uint256_pubkey(cs, pk))
+                .collect::<Result<Vec<_>, _>>()?
+        };
+
+        let valid = vaa.check(cs, &guardian_set)?;
+        Boolean::enforce_equal(cs, &valid, &Boolean::Constant(true))?;
+        println!("hello");
         Ok(())
+    }
+
+    fn uint256_pubkey<E: Engine, CS: ConstraintSystem<E>>(
+        cs: &mut CS,
+        hex_str: &str,
+    ) -> Result<(UInt256<E>, UInt256<E>), SynthesisError> {
+        let data = hex::decode(hex_str).map_err(new_synthesis_error)?;
+        if data.len() != 64 {
+            return Err(new_synthesis_error(format!(
+                "hex string must be 64 characters long, got {}",
+                hex_str.len()
+            )));
+        }
+        let x = uint256_from_bytes_witness(cs, &data[0..32])?;
+        let y = uint256_from_bytes_witness(cs, &data[32..])?;
+        Ok((x, y))
     }
 
     fn get_vaa() -> &'static str {

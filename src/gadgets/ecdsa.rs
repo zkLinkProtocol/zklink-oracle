@@ -26,7 +26,7 @@ use sync_vm::{
     },
     utils::u64_to_fe,
     vm::{
-        partitioner::smart_or,
+        partitioner::{smart_and, smart_or},
         primitives::{uint256::UInt256, UInt32, UInt64},
     },
 };
@@ -95,8 +95,7 @@ impl<E: Engine> Signature<E> {
         let (success, (x, y)) = self.ecrecover(cs, &message_hash)?;
         let x_is_equal = UInt256::equals(cs, &x, &pubkey.0)?;
         let y_is_equal = UInt256::equals(cs, &y, &pubkey.1)?;
-        let valid = Boolean::and(cs, &x_is_equal, &y_is_equal)?;
-        let valid = Boolean::and(cs, &valid, &success)?;
+        let valid = smart_and(cs, &[x_is_equal, y_is_equal, success])?;
         Ok(valid)
     }
 
@@ -455,25 +454,16 @@ pub fn ecrecover<'a, E: Engine, CS: ConstraintSystem<E>>(
         .collect();
     q_y_chunks_be.reverse();
 
-    fn convert_bytes_to_uint256<E: Engine, CS: ConstraintSystem<E>>(
-        cs: &mut CS,
-        bytes: &[Byte<E>],
-        mask: &Boolean,
-    ) -> Result<UInt256<E>, SynthesisError> {
-        let mut chunks_be_arr = [Byte::empty(); 32];
-        chunks_be_arr.copy_from_slice(&bytes[..]);
-        let uint256 = UInt256::from_be_bytes_fixed(cs, &chunks_be_arr)?;
-        let uint256 = uint256.mask(cs, mask)?;
-        Ok(uint256)
-    }
-
-    let x_uint256 = convert_bytes_to_uint256(cs, &q_x_chunks_be[..], &any_exception.not())?;
-    let y_uint256 = convert_bytes_to_uint256(cs, &q_y_chunks_be[..], &any_exception.not())?;
+    use crate::utils::uint256_from_bytes_with_mask;
+    let x_uint256 = uint256_from_bytes_with_mask(cs, &q_x_chunks_be[..], &any_exception.not())?;
+    let y_uint256 = uint256_from_bytes_with_mask(cs, &q_y_chunks_be[..], &any_exception.not())?;
 
     // let pubkey_bytes = q_x_chunks_be
     //     .into_iter()
     //     .chain(q_y_chunks_be.into_iter())
+    //     .map(|b| b.get_byte_value().unwrap())
     //     .collect::<Vec<_>>();
+    // println!("pubkey: {}", hex::encode(&pubkey_bytes[..]));
 
     Ok((any_exception.not(), (x_uint256, y_uint256)))
 }

@@ -4,6 +4,7 @@ use pairing::Engine;
 use std::str::FromStr;
 use sync_vm::circuit_structures::byte::Byte;
 use sync_vm::franklin_crypto::bellman::SynthesisError;
+use sync_vm::franklin_crypto::plonk::circuit::boolean::Boolean;
 use sync_vm::{
     franklin_crypto::{
         bellman::plonk::better_better_cs::cs::ConstraintSystem, plonk::circuit::allocated_num::Num,
@@ -36,7 +37,29 @@ pub fn hex_from_bytes<E: Engine>(bytes: &[Byte<E>]) -> String {
     hex::encode(bbs)
 }
 
-pub fn uint256_and_u8_chunks_from_repr<E: Engine, CS: ConstraintSystem<E>>(
+pub fn uint256_from_bytes_with_mask<E: Engine, CS: ConstraintSystem<E>>(
+    cs: &mut CS,
+    bytes: &[Byte<E>],
+    mask: &Boolean,
+) -> Result<UInt256<E>, SynthesisError> {
+    let mut chunks_be_arr = [Byte::empty(); 32];
+    chunks_be_arr.copy_from_slice(&bytes[..]);
+    let uint256 = UInt256::from_be_bytes_fixed(cs, &chunks_be_arr)?;
+    let uint256 = uint256.mask(cs, mask)?;
+    Ok(uint256)
+}
+
+pub fn uint256_from_bytes<E: Engine, CS: ConstraintSystem<E>>(
+    cs: &mut CS,
+    bytes: &[Byte<E>],
+) -> Result<UInt256<E>, SynthesisError> {
+    let mut chunks_be_arr = [Byte::empty(); 32];
+    chunks_be_arr.copy_from_slice(&bytes[..]);
+    let uint256 = UInt256::from_be_bytes_fixed(cs, &chunks_be_arr)?;
+    Ok(uint256)
+}
+
+pub fn uint256_and_num_from_repr_witness<E: Engine, CS: ConstraintSystem<E>>(
     cs: &mut CS,
     str: &str,
 ) -> Result<(UInt256<E>, [Num<E>; 32]), SynthesisError> {
@@ -47,11 +70,11 @@ pub fn uint256_and_u8_chunks_from_repr<E: Engine, CS: ConstraintSystem<E>>(
     UInt256::alloc_from_biguint_and_return_u8_chunks(cs, Some(biguint))
 }
 
-pub fn uint256_from_repr<E: Engine, CS: ConstraintSystem<E>>(
+pub fn uint256_from_repr_witness<E: Engine, CS: ConstraintSystem<E>>(
     cs: &mut CS,
     str: &str,
 ) -> Result<UInt256<E>, SynthesisError> {
-    Ok(uint256_and_u8_chunks_from_repr(cs, str)?.0)
+    Ok(uint256_and_num_from_repr_witness(cs, str)?.0)
 }
 
 pub fn uint256_constant_from_be_hex_str<E: Engine, CS: ConstraintSystem<E>>(

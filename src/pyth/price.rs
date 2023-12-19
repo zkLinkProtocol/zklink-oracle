@@ -25,7 +25,7 @@ pub struct Update<E: Engine, const N: usize> {
 }
 
 impl<E: Engine, const N: usize> Update<E, N> {
-    pub fn alloc_from_witness<CS: ConstraintSystem<E>>(
+    pub fn from_price_update_witness<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         witness: pythnet_sdk::wire::v1::MerklePriceUpdate,
     ) -> Result<Self, SynthesisError> {
@@ -34,7 +34,7 @@ impl<E: Engine, const N: usize> Update<E, N> {
             let message: Vec<u8> = witness.message.into();
             let price_feed = pythnet_sdk::wire::from_slice::<byteorder::BE, Message>(&message)
                 .map_err(new_synthesis_error)?;
-            PriceFeed::alloc_from_witness(cs, price_feed)?
+            PriceFeed::from_message_witness(cs, price_feed)?
         };
         let proof = {
             let proof = witness.proof.to_bytes();
@@ -71,7 +71,8 @@ impl<E: Engine, const N: usize> Update<E, N> {
         cs: &mut CS,
         root: &MerkleRoot<E>,
     ) -> Result<Boolean, SynthesisError> {
-        root.check(cs, &self.proof, &self.message.to_bytes())
+        let bytes = self.message.to_bytes(cs);
+        root.check(cs, &self.proof, &bytes)
     }
 }
 
@@ -128,7 +129,7 @@ pub struct PriceFeed<E: Engine> {
 }
 
 impl<E: Engine> PriceFeed<E> {
-    pub fn alloc_from_witness<CS: ConstraintSystem<E>>(
+    pub fn from_message_witness<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         witness: pythnet_sdk::messages::Message,
     ) -> Result<Self, SynthesisError> {
@@ -182,50 +183,7 @@ impl<E: Engine> PriceFeed<E> {
         })
     }
 
-    // TODO: delete
-    pub fn new(bytes: [Byte<E>; LEN_PRICE_FEED]) -> Self {
-        let mut offset = 0 as usize;
-        let price_feed_type = bytes[offset..offset + LEN_PRICE_FEED_TYPE]
-            .try_into()
-            .unwrap();
-        offset += LEN_PRICE_FEED_TYPE;
-        let feed_id = bytes[offset..offset + LEN_FEED_ID].try_into().unwrap();
-        offset += LEN_FEED_ID;
-        let price = bytes[offset..offset + LEN_PRICE].try_into().unwrap();
-        offset += LEN_PRICE;
-        let conf = bytes[offset..offset + LEN_CONF].try_into().unwrap();
-        offset += LEN_CONF;
-        let exponent = bytes[offset..offset + LEN_EXPONENT].try_into().unwrap();
-        offset += LEN_EXPONENT;
-        let publish_time = bytes[offset..offset + LEN_PUBLISH_TIME].try_into().unwrap();
-        offset += LEN_PUBLISH_TIME;
-        let prev_publish_time = bytes[offset..offset + LEN_PREV_PUBLISH_TIME]
-            .try_into()
-            .unwrap();
-        offset += LEN_PREV_PUBLISH_TIME;
-        let ema_price = bytes[offset..offset + LEN_EMA_PRICE].try_into().unwrap();
-        offset += LEN_EMA_PRICE;
-        let ema_conf = bytes[offset..offset + LEN_EMA_CONF].try_into().unwrap();
-        Self {
-            price_feed_type,
-            feed_id,
-            price,
-            conf,
-            exponent,
-            publish_time,
-            prev_publish_time,
-            ema_price,
-            ema_conf,
-        }
-    }
-
-    pub fn new_from_slice(bytes: &[Byte<E>]) -> Result<Self, SynthesisError> {
-        let bytes = bytes.try_into().map_err(new_synthesis_error)?;
-        Ok(Self::new(bytes))
-    }
-
-    // TODO: add cs as parameter
-    pub fn to_bytes(&self) -> [Byte<E>; LEN_PRICE_FEED] {
+    pub fn to_bytes<CS: ConstraintSystem<E>>(&self, _: &mut CS) -> [Byte<E>; LEN_PRICE_FEED] {
         let mut bytes = [Byte::<E>::zero(); LEN_PRICE_FEED];
         let mut offset = 0 as usize;
         bytes[offset..offset + LEN_PRICE_FEED_TYPE].copy_from_slice(&self.price_feed_type);
@@ -253,21 +211,21 @@ impl<E: Engine> PriceFeed<E> {
 mod tests {
     use crate::{
         gadgets::keccak160,
-        utils::{
-            bytes_constant_from_hex_str,
-            testing::{bytes_assert_eq, create_test_constraint_system},
-        },
+        utils::testing::{bytes_assert_eq, create_test_constraint_system},
     };
     use pairing::bn256::Bn256;
     use pythnet_sdk::wire::from_slice;
     use sync_vm::franklin_crypto::{bellman::SynthesisError, plonk::circuit::boolean::Boolean};
 
     #[test]
-    // TODO: rename
-    fn tset_price_feed() -> Result<(), SynthesisError> {
+    fn test_price_feed_from_witness() -> Result<(), SynthesisError> {
+        let cs = &mut create_test_constraint_system()?;
         let hex_str = "00e62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b4300000352813ebdc00000000042eeb9f6fffffff800000000655ccff700000000655ccff700000356d0a75ce0000000005b0d7112";
-        let bytes = bytes_constant_from_hex_str::<Bn256>(hex_str).unwrap();
-        let price_feed = super::PriceFeed::new_from_slice(&bytes)?;
+        let data = hex::decode(hex_str).unwrap();
+        let price_feed = {
+            let p = from_slice::<byteorder::BE, pythnet_sdk::messages::Message>(&data).unwrap();
+            super::PriceFeed::from_message_witness(cs, p)?
+        };
         {
             bytes_assert_eq(&price_feed.price_feed_type, "00");
             bytes_assert_eq(
@@ -282,32 +240,19 @@ mod tests {
             bytes_assert_eq(&price_feed.ema_price, "00000356d0a75ce0");
             bytes_assert_eq(&price_feed.ema_conf, "000000005b0d7112");
         }
-        bytes_assert_eq(&price_feed.to_bytes(), hex_str);
-        Ok(())
-    }
-
-    #[test]
-    fn test_price_feed_alloc_from_witness() -> Result<(), SynthesisError> {
-        let cs = &mut create_test_constraint_system()?;
-        let hex_str = "00e62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b4300000352813ebdc00000000042eeb9f6fffffff800000000655ccff700000000655ccff700000356d0a75ce0000000005b0d7112";
-        let data = hex::decode(hex_str).unwrap();
-        let price_feed = {
-            let p = from_slice::<byteorder::BE, pythnet_sdk::messages::Message>(&data).unwrap();
-            super::PriceFeed::alloc_from_witness(cs, p)?
-        };
-        let bytes = price_feed.to_bytes();
+        let bytes = price_feed.to_bytes(cs);
         bytes_assert_eq(&bytes, hex_str);
         Ok(())
     }
 
     #[test]
-    fn test_update_alloc_from_witness() -> Result<(), SynthesisError> {
+    fn test_update_from_witness() -> Result<(), SynthesisError> {
         let cs = &mut create_test_constraint_system()?;
         let hex_str = "005500e62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b4300000352813ebdc00000000042eeb9f6fffffff800000000655ccff700000000655ccff700000356d0a75ce0000000005b0d71120ad97a31be8c09393bfbcd8cc36a4c486949eaab2bbe6e19294367c1689b7521ba31bcd504b01db4a0c74a56d137795aefe2df9137c1a7d82af648cb8aeece3482a0d6194ec36d2dab3b491296f5d9947b5b87bac5e58c2760c4677e0bb994618fb5c5d853fecc55351cd68a5029d4bc2b6f9ab5c23e7b9462af514a8475ffa181ea1216d2a8f3447464f8685f9b935ce5124e872d4a8b9ea16f9487952dff1ce6a2ef5e724d4da1e5f2bf897e52ac6a31ac60868776163f6ab8f1d74214184da7952bc731ff51f01f";
         let data = hex::decode(hex_str).unwrap();
         let update =
             from_slice::<byteorder::BE, pythnet_sdk::wire::v1::MerklePriceUpdate>(&data).unwrap();
-        let update = super::Update::<Bn256, 10>::alloc_from_witness(cs, update)?;
+        let update = super::Update::<Bn256, 10>::from_price_update_witness(cs, update)?;
         {
             let root = {
                 use sync_vm::traits::CSAllocatable;

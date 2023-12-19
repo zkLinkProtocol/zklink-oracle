@@ -31,13 +31,13 @@ pub struct WormholeMessage<E: Engine> {
 }
 
 impl<E: Engine> WormholeMessage<E> {
-    pub fn alloc_from_witness<CS: ConstraintSystem<E>>(
+    pub fn from_vaa_witness<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         message: wormhole_sdk::Vaa<&serde_wormhole::RawMessage>,
     ) -> Result<Self, SynthesisError> {
         let (header, body): (wormhole_sdk::vaa::Header, wormhole_sdk::vaa::Body<_>) =
             message.into();
-        let body = WormholeBody::alloc_from_witness(cs, body)?;
+        let body = WormholeBody::from_vaa_body_witness(cs, body)?;
         if header.signatures.len() < NUM_WORMHOLE_SIGNATURES {
             return Err(new_synthesis_error(format!(
                 "Only have {} signature. expect {} at least",
@@ -50,7 +50,7 @@ impl<E: Engine> WormholeMessage<E> {
             .into_iter()
             .map(|i| {
                 let signature = header.signatures[i].signature;
-                Signature::alloc_from_bytes_witness(cs, &signature)
+                Signature::from_bytes_witness(cs, &signature)
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -189,7 +189,7 @@ impl<E: Engine> WormholeBody<E> {
         bytes
     }
 
-    pub fn alloc_from_witness<CS: ConstraintSystem<E>>(
+    pub fn from_vaa_body_witness<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         witness: wormhole_sdk::vaa::Body<&serde_wormhole::RawMessage>,
     ) -> Result<Self, SynthesisError> {
@@ -227,7 +227,7 @@ impl<E: Engine> WormholeBody<E> {
             let payload =
                 pythnet_sdk::wire::v1::WormholeMessage::try_from_bytes(witness.payload.as_ref())
                     .map_err(new_synthesis_error)?;
-            WormholePayload::alloc_from_witness(cs, payload)?
+            WormholePayload::from_wormhole_message_witness(cs, payload)?
         };
         Ok(Self {
             timestamp,
@@ -308,7 +308,7 @@ impl<E: Engine> WormholePayload<E> {
         bytes
     }
 
-    pub fn alloc_from_witness<CS: ConstraintSystem<E>>(
+    pub fn from_wormhole_message_witness<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         message: pythnet_sdk::wire::v1::WormholeMessage,
     ) -> Result<Self, SynthesisError> {
@@ -339,13 +339,24 @@ impl<E: Engine> WormholePayload<E> {
 
 #[cfg(test)]
 mod tests {
-    use pairing::bn256::Bn256;
-    use sync_vm::franklin_crypto::bellman::SynthesisError;
+    use pairing::{bn256::Bn256, Engine};
+    use sync_vm::{circuit_structures::byte::Byte, franklin_crypto::bellman::SynthesisError};
 
     use crate::utils::{
-        bytes_constant_from_hex_str,
+        new_synthesis_error,
         testing::{bytes_assert_eq, create_test_constraint_system},
     };
+
+    pub fn bytes_constant_from_hex_str<E: Engine>(
+        hex_str: &str,
+    ) -> Result<Vec<Byte<E>>, SynthesisError> {
+        let bytes = hex::decode(hex_str)
+            .map_err(new_synthesis_error)?
+            .into_iter()
+            .map(|b| Byte::<E>::constant(b))
+            .collect::<Vec<_>>();
+        Ok(bytes)
+    }
 
     #[test]
     fn test_wormhole_payload() -> Result<(), SynthesisError> {
@@ -398,7 +409,7 @@ mod tests {
         let hex_str = "415557560000000000069b993c00002710095bb7e5fa374ea08603a6698123d99101547a50";
         let data = hex::decode(hex_str).unwrap();
         let payload = pythnet_sdk::wire::v1::WormholeMessage::try_from_bytes(&data).unwrap();
-        let payload = super::WormholePayload::<_>::alloc_from_witness(cs, payload)?;
+        let payload = super::WormholePayload::<_>::from_wormhole_message_witness(cs, payload)?;
         bytes_assert_eq(&payload.to_bytes(), hex_str);
         Ok(())
     }
@@ -411,7 +422,7 @@ mod tests {
             serde_wormhole::from_slice(&data).unwrap();
         let (_, body): (_, wormhole_sdk::vaa::Body<_>) = vaa.into();
         let expected = hex::encode(serde_wormhole::to_vec(&body).unwrap());
-        let body = super::WormholeBody::<_>::alloc_from_witness(cs, body)?;
+        let body = super::WormholeBody::<_>::from_vaa_body_witness(cs, body)?;
         bytes_assert_eq(&body.to_bytes(), expected);
         Ok(())
     }
@@ -422,7 +433,7 @@ mod tests {
         let data = hex::decode(get_vaa()).unwrap();
         let vaa: wormhole_sdk::Vaa<&serde_wormhole::RawMessage> =
             serde_wormhole::from_slice(&data).unwrap();
-        let _ = super::WormholeMessage::<_>::alloc_from_witness(cs, vaa)?;
+        let _ = super::WormholeMessage::<_>::from_vaa_witness(cs, vaa)?;
 
         // let (_, body): (_, wormhole_sdk::vaa::Body<_>) = vaa.into();
         // let expected = hex::encode(serde_wormhole::to_vec(&body).unwrap());

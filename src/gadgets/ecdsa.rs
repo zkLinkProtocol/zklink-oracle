@@ -101,8 +101,7 @@ impl<E: Engine> Signature<E> {
 
     /// 0  .. 64: r || s
     /// 64 .. 65: recid
-    // TODO: rename to bytes
-    pub fn alloc_from_bytes_witness<CS: ConstraintSystem<E>>(
+    pub fn from_bytes_witness<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         witness: &[u8],
     ) -> Result<Self, SynthesisError> {
@@ -493,7 +492,7 @@ mod tests {
         };
         let n = cs.n();
         // let signature = Signature::alloc_from_witness(cs, Some(signature))?;
-        let signature = Signature::alloc_from_bytes_witness(cs, &signature)?;
+        let signature = Signature::from_bytes_witness(cs, &signature)?;
         let pubkey = {
             let (x, y) = (
                 BigUint::from_str_radix(

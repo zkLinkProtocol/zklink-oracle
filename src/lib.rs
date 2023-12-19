@@ -1,5 +1,5 @@
 use pairing::Engine;
-use pyth::{Update, Vaa};
+use pyth::{PriceUpdate, Vaa};
 use sync_vm::{
     franklin_crypto::{
         bellman::{plonk::better_better_cs::cs::ConstraintSystem, SynthesisError},
@@ -17,7 +17,7 @@ pub mod utils;
 pub fn check_price_updates<E: Engine, CS: ConstraintSystem<E>, const N1: usize, const N2: usize>(
     cs: &mut CS,
     vaa: &Vaa<E, N2>,
-    updates: &[Update<E, N1>],
+    updates: &[PriceUpdate<E, N1>],
     guardian_set: &[(UInt256<E>, UInt256<E>)],
 ) -> Result<Boolean, SynthesisError> {
     if guardian_set.len() == 0 {
@@ -109,7 +109,7 @@ mod testss {
                     .into_iter()
                     .map(|u| {
                         let update =
-                            pyth::Update::<_, DEEPTH_MERKLE_TREE>::from_price_update_witness(cs, u);
+                            pyth::PriceUpdate::<_, DEEPTH_MERKLE_TREE>::from_price_update_witness(cs, u);
                         update
                     })
                     .collect::<Result<Vec<_>, _>>()?;

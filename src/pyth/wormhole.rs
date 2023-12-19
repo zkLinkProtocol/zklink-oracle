@@ -20,12 +20,9 @@ use crate::{
     utils::new_synthesis_error,
 };
 
-// Circuit representation of [`wormhole vaa`](https://docs.wormhole.com/wormhole/explore-wormhole/vaa)
-// We only put part of the VAA fields here.
-//
-// Representation of wormhole VAA. We only put parts of VAA fields here.
-// - https://docs.wormhole.com/wormhole/explore-wormhole/vaa
-// - https://github.com/wormhole-foundation/wormhole/blob/bfd4ba40ef2d213ad69bac638c72009ba4a07878/sdk/rust/core/src/vaa.rs#L84-L100
+/// Circuit (partial) representation of wormhole [`VAA<P>`](https://github.com/wormhole-foundation/wormhole/blob/bfd4ba40ef2d213ad69bac638c72009ba4a07878/sdk/rust/core/src/vaa.rs#L80-L100)
+///
+/// Visit [VAAs documentation](https://docs.wormhole.com/wormhole/explore-wormhole/vaa) for more.
 #[derive(Debug, Clone)]
 pub struct Vaa<E: Engine, const N: usize> {
     pub signatures: [Signature<E>; N],
@@ -33,7 +30,8 @@ pub struct Vaa<E: Engine, const N: usize> {
 }
 
 impl<E: Engine, const N: usize> Vaa<E, N> {
-    // len for signature must be at least N
+    /// Create VAA from witness. Size of signatures in witness must be at least N, otherwise it
+    /// returns error.
     pub fn from_vaa_witness<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         message: wormhole_sdk::Vaa<&serde_wormhole::RawMessage>,
@@ -71,7 +69,7 @@ impl<E: Engine, const N: usize> Vaa<E, N> {
         &self.signatures
     }
 
-    // https://docs.wormhole.com/wormhole/explore-wormhole/vaa#signatures
+    /// Recover public keys from VAA signatures.
     pub fn ecrecover<CS: ConstraintSystem<E>>(
         &self,
         cs: &mut CS,
@@ -91,7 +89,7 @@ impl<E: Engine, const N: usize> Vaa<E, N> {
         Ok(pubkeys)
     }
 
-    /// Check if all VAA sigantures are signed by anyone from guardian set.
+    /// Check if all VAA sigantures are signed by one from guardian set.
     /// There is not quorum check and you should make sure all signatures are valid.
     pub fn check<CS: ConstraintSystem<E>>(
         &self,
@@ -276,9 +274,8 @@ const LEN_SLOT: usize = 8;
 const LEN_RING_SIZE: usize = 4;
 const LEN_ROOT: usize = keccak160::WIDTH_HASH_BYTES;
 const LEN_MESSAGE: usize = LEN_MAGIC + LEN_PAYLOAD_TYPE + LEN_SLOT + LEN_RING_SIZE + LEN_ROOT;
-// Representation of pyth-defined wormhole payload
-// - https://github.com/pyth-network/pyth-crosschain/blob/1d82f92d80598e689f4130983d06b12412b83427/pythnet/pythnet_sdk/src/wire.rs#L109-L112
 const PAYLOAD_TYPE: u8 = 0; // Fixed payload type for now.
+/// Representation of pyth-defined wormhole payload [`WormholeMessage`](https://github.com/pyth-network/pyth-crosschain/blob/1d82f92d80598e689f4130983d06b12412b83427/pythnet/pythnet_sdk/src/wire.rs#L108-L112).
 #[derive(Debug, Clone)]
 pub struct WormholePayload<E: Engine> {
     pub magic: [Byte<E>; LEN_MAGIC],

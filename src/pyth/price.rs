@@ -15,16 +15,16 @@ use crate::{
 
 use super::wormhole::Vaa;
 
-// const UPDATE_BYTES_LEN: usize = 2 + 85 + 1 + 10 * 20;
-// Circuit representation of pyth `PriceUpdate`
-// - https://github.com/pyth-network/pyth-crosschain/blob/178ad4cb0edff38f43d8e26f23d1d9e83448093c/pythnet/pythnet_sdk/src/wire.rs#L109-L111
+/// Circuit representation of pyth [`PriceUpdate`](https://github.com/pyth-network/pyth-crosschain/blob/178ad4cb0edff38f43d8e26f23d1d9e83448093c/pythnet/pythnet_sdk/src/wire.rs#L109-L112)
+///
+/// `N` is the depth of merkle tree used by pyth, which is `10`` by now.
 #[derive(Debug, Clone)]
-pub struct Update<E: Engine, const N: usize> {
+pub struct PriceUpdate<E: Engine, const N: usize> {
     pub message: PriceFeed<E>,
     pub proof: MerklePath<E, N>,
 }
 
-impl<E: Engine, const N: usize> Update<E, N> {
+impl<E: Engine, const N: usize> PriceUpdate<E, N> {
     pub fn from_price_update_witness<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         witness: pythnet_sdk::wire::v1::MerklePriceUpdate,
@@ -224,7 +224,7 @@ mod tests {
     use sync_vm::franklin_crypto::{bellman::SynthesisError, plonk::circuit::boolean::Boolean};
 
     #[test]
-    fn test_price_feed_from_witness() -> Result<(), SynthesisError> {
+    fn test_price_feed() -> Result<(), SynthesisError> {
         let cs = &mut create_test_constraint_system()?;
         let hex_str = "00e62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b4300000352813ebdc00000000042eeb9f6fffffff800000000655ccff700000000655ccff700000356d0a75ce0000000005b0d7112";
         let data = hex::decode(hex_str).unwrap();
@@ -252,13 +252,13 @@ mod tests {
     }
 
     #[test]
-    fn test_update_from_witness() -> Result<(), SynthesisError> {
+    fn test_price_update() -> Result<(), SynthesisError> {
         let cs = &mut create_test_constraint_system()?;
         let hex_str = "005500e62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b4300000352813ebdc00000000042eeb9f6fffffff800000000655ccff700000000655ccff700000356d0a75ce0000000005b0d71120ad97a31be8c09393bfbcd8cc36a4c486949eaab2bbe6e19294367c1689b7521ba31bcd504b01db4a0c74a56d137795aefe2df9137c1a7d82af648cb8aeece3482a0d6194ec36d2dab3b491296f5d9947b5b87bac5e58c2760c4677e0bb994618fb5c5d853fecc55351cd68a5029d4bc2b6f9ab5c23e7b9462af514a8475ffa181ea1216d2a8f3447464f8685f9b935ce5124e872d4a8b9ea16f9487952dff1ce6a2ef5e724d4da1e5f2bf897e52ac6a31ac60868776163f6ab8f1d74214184da7952bc731ff51f01f";
         let data = hex::decode(hex_str).unwrap();
         let update =
             from_slice::<byteorder::BE, pythnet_sdk::wire::v1::MerklePriceUpdate>(&data).unwrap();
-        let update = super::Update::<Bn256, 10>::from_price_update_witness(cs, update)?;
+        let update = super::PriceUpdate::<Bn256, 10>::from_price_update_witness(cs, update)?;
         {
             let root = {
                 use sync_vm::traits::CSAllocatable;

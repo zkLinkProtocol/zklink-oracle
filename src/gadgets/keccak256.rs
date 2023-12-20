@@ -11,7 +11,7 @@ use sync_vm::{
     scheduler::block_header::keccak_output_into_bytes,
 };
 
-// cost: 26723 gates for each block
+// cost about 26000 gates for each block
 pub fn digest<E: Engine, CS: ConstraintSystem<E>>(
     cs: &mut CS,
     bytes: &[Byte<E>],

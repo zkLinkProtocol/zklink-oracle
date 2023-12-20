@@ -12,6 +12,7 @@ use sync_vm::{
 
 use crate::utils::{self, new_synthesis_error};
 
+/// Circuit representation of Ethereum address.
 pub struct Address<E: Engine>(UInt256<E>);
 
 impl<E: Engine> Address<E> {
@@ -23,6 +24,7 @@ impl<E: Engine> Address<E> {
         self.0
     }
 
+    /// Create address from bytes.
     pub fn from_bytes<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         bytes: &[Byte<E>; 20],
@@ -33,6 +35,7 @@ impl<E: Engine> Address<E> {
         Ok(Self(uint256))
     }
 
+    /// Create address from public key x and y coordinates.
     pub fn from_pubkey_x_y<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         x: &[Byte<E>; 32],
@@ -57,7 +60,7 @@ impl<E: Engine> Address<E> {
         Ok(Self(uint256))
     }
 
-    // Convert from compressed / uncompressed public key
+    /// Create address from public key witness in compressed / uncompressed format.
     pub fn from_pubkey_witness<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         witness: &[u8],

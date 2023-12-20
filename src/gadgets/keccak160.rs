@@ -15,7 +15,7 @@ use crate::utils::{new_synthesis_error, num_from_be_bytes};
 pub const WIDTH_HASH_BYTES: usize = 20;
 pub type Hash<E> = [Byte<E>; WIDTH_HASH_BYTES];
 
-pub fn hash_from_slice<E: Engine>(bytes: &[Byte<E>]) -> Result<Hash<E>, SynthesisError> {
+fn hash_from_slice<E: Engine>(bytes: &[Byte<E>]) -> Result<Hash<E>, SynthesisError> {
     bytes.try_into().map_err(|_| {
         new_synthesis_error(format!(
             "invalid bytes length {}, expect {}",
@@ -36,10 +36,11 @@ pub fn digest<E: Engine, CS: ConstraintSystem<E>>(
     Ok(digest160)
 }
 
-// Circuit version of Pyth Merkle Merkle
-// See: https://github.com/pyth-network/pyth-crosschain/blob/245cc231fd0acd5d91757ab29f474237c2a606aa/pythnet/pythnet_sdk/src/accumulators/merkle.rs#L72-L78
+/// Circuit implementation of pyth [`MerkleRoot`](https://github.com/pyth-network/pyth-crosschain/blob/245cc231fd0acd5d91757ab29f474237c2a606aa/pythnet/pythnet_sdk/src/accumulators/merkle.rs#L53-L66).
 #[derive(Debug, Clone)]
 pub struct MerkleRoot<E: Engine>(Hash<E>);
+/// Circuit implementation of pyth
+/// [`MerklePath`](https://github.com/pyth-network/pyth-crosschain/blob/245cc231fd0acd5d91757ab29f474237c2a606aa/pythnet/pythnet_sdk/src/accumulators/merkle.rs#L39-L51)
 #[derive(Debug, Clone)]
 pub struct MerklePath<E: Engine, const N: usize>(pub [Hash<E>; N]);
 
@@ -73,7 +74,7 @@ impl<E: Engine> MerkleRoot<E> {
         self.0.clone()
     }
 
-    // https://github.com/pyth-network/pyth-crosschain/blob/245cc231fd0acd5d91757ab29f474237c2a606aa/pythnet/pythnet_sdk/src/accumulators/merkle.rs#L196-L198
+    /// Compute hash of a leaf node.
     pub fn hash_leaf<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         item: &[Byte<E>],
@@ -83,6 +84,7 @@ impl<E: Engine> MerkleRoot<E> {
         digest(cs, &bytes)
     }
 
+    /// Compute hash of a node.
     pub fn hash_node<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         l: Hash<E>,
@@ -108,6 +110,7 @@ impl<E: Engine> MerkleRoot<E> {
                 })
                 .collect::<Result<Vec<_>, SynthesisError>>()?;
             let (l, r): (Vec<_>, Vec<_>) = zipped.into_iter().unzip();
+
             (hash_from_slice(&l)?, hash_from_slice(&r)?)
         };
         // https://github.com/pyth-network/pyth-crosschain/blob/245cc231fd0acd5d91757ab29f474237c2a606aa/pythnet/pythnet_sdk/src/accumulators/merkle.rs#L201-L207
@@ -118,7 +121,7 @@ impl<E: Engine> MerkleRoot<E> {
         digest(cs, &bytes)
     }
 
-    // https://github.com/pyth-network/pyth-crosschain/blob/245cc231fd0acd5d91757ab29f474237c2a606aa/pythnet/pythnet_sdk/src/accumulators/merkle.rs#L88-L94
+    /// Check if the given item is in the merkle tree.
     pub fn check<CS: ConstraintSystem<E>, const N: usize>(
         &self,
         cs: &mut CS,

@@ -77,7 +77,7 @@ impl<E: Engine, const N: usize> PriceUpdate<E, N> {
     }
 }
 
-/// Circuit representation of pyth [`Proof`](https://github.com/pyth-network/pyth-crosschain/blob/178ad4cb0edff38f43d8e26f23d1d9e83448093c/pythnet/pythnet_sdk/src/wire.rs#L98-L104), the key filed in [`AccumulatorUpdateData`](https://github.com/pyth-network/pyth-crosschain/blob/178ad4cb0edff38f43d8e26f23d1d9e83448093c/pythnet/pythnet_sdk/src/wire.rs#L55-L66).
+/// Circuit (partial) representation of pyth [`Proof`](https://github.com/pyth-network/pyth-crosschain/blob/178ad4cb0edff38f43d8e26f23d1d9e83448093c/pythnet/pythnet_sdk/src/wire.rs#L98-L104), the key field in [`AccumulatorUpdateData`](https://github.com/pyth-network/pyth-crosschain/blob/178ad4cb0edff38f43d8e26f23d1d9e83448093c/pythnet/pythnet_sdk/src/wire.rs#L55-L66).
 ///
 /// `N1` is the number of price updates. `N2` is the depth of pyth merkle tree (10 by now). `N3` is the number of wormhole signatures.
 ///
@@ -89,17 +89,19 @@ pub struct PriceUpdates<E: Engine, const N1: usize, const N2: usize, const N3: u
 }
 
 impl<E: Engine, const N1: usize, const N2: usize, const N3: usize> PriceUpdates<E, N1, N2, N3> {
+    /// Check if the price updates and VAA are valid.
     pub fn check<CS: ConstraintSystem<E>>(
         &self,
         cs: &mut CS,
         guardian_set: &[(UInt256<E>, UInt256<E>)],
     ) -> Result<Boolean, SynthesisError> {
-        let valid_signatures = self.vaa.check(cs, guardian_set)?;
-        let valid_updates = self.check_updates(cs)?;
+        let valid_signatures = self.check_vaa(cs, guardian_set)?;
+        let valid_updates = self.check_price_updates(cs)?;
         Boolean::and(cs, &valid_signatures, &valid_updates)
     }
 
-    pub fn check_updates<CS: ConstraintSystem<E>>(
+    /// Check if the price updates are valid.
+    pub fn check_price_updates<CS: ConstraintSystem<E>>(
         &self,
         cs: &mut CS,
     ) -> Result<Boolean, SynthesisError> {
@@ -110,6 +112,15 @@ impl<E: Engine, const N1: usize, const N2: usize, const N3: usize> PriceUpdates<
             result = Boolean::and(cs, &result, &check)?;
         }
         Ok(result)
+    }
+
+    /// Check if the VAA is valid.
+    pub fn check_vaa<CS: ConstraintSystem<E>>(
+        &self,
+        cs: &mut CS,
+        guardian_set: &[(UInt256<E>, UInt256<E>)],
+    ) -> Result<Boolean, SynthesisError> {
+        self.vaa.check(cs, guardian_set)
     }
 }
 
@@ -131,6 +142,8 @@ pub const LEN_PRICE_FEED: usize = LEN_PRICE_FEED_TYPE
     + LEN_PREV_PUBLISH_TIME
     + LEN_EMA_PRICE
     + LEN_EMA_CONF;
+/// Circuit representation of pyth
+/// [`Message::PriceFeedMessage`]((https://github.com/pyth-network/pyth-crosschain/blob/178ad4cb0edff38f43d8e26f23d1d9e83448093c/pythnet/pythnet_sdk/src/messages.rs#L36-L39))
 #[derive(Debug, Clone)]
 pub struct PriceFeed<E: Engine> {
     pub price_feed_type: [Byte<E>; LEN_PRICE_FEED_TYPE],

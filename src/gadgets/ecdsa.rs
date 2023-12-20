@@ -70,6 +70,7 @@ const SECP_B_COEF: u64 = 7;
 const EXCEPTION_FLAGS_ARR_LEN: usize = 4;
 const X_POWERS_ARR_LEN: usize = 256;
 
+/// Circuit implementation of ECDSA signature.
 #[derive(Debug, Clone)]
 pub struct Signature<E: Engine> {
     pub r: UInt256<E>,
@@ -78,6 +79,7 @@ pub struct Signature<E: Engine> {
 }
 
 impl<E: Engine> Signature<E> {
+    /// Recover the public key from the signature and the message hash.
     pub fn ecrecover<CS: ConstraintSystem<E>>(
         &self,
         cs: &mut CS,
@@ -86,6 +88,7 @@ impl<E: Engine> Signature<E> {
         ecrecover(cs, &self.recid, &self.r, &self.s, message_hash)
     }
 
+    /// Verify the signature against the message hash and the public key.
     pub fn verify<CS: ConstraintSystem<E>>(
         &self,
         cs: &mut CS,
@@ -99,8 +102,7 @@ impl<E: Engine> Signature<E> {
         Ok(valid)
     }
 
-    /// 0  .. 64: r || s
-    /// 64 .. 65: recid
+    /// Create a signature from a witness of the 65 bytes in format `32-byte r || 32-byte s || 1-byte recid`.
     pub fn from_bytes_witness<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         witness: &[u8],
@@ -158,6 +160,7 @@ impl<E: Engine> CSAllocatable<E> for Signature<E> {
     }
 }
 
+/// Recover the public key from the signature and the message hash.
 pub fn ecrecover<'a, E: Engine, CS: ConstraintSystem<E>>(
     cs: &mut CS,
     recid: &UInt32<E>,

@@ -82,7 +82,7 @@ fn main() -> Result<(), SynthesisError> {
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let is_valid = price_updates.check(cs, &guardian_set)?;
+    let is_valid = price_updates.check_by_pubkey(cs, &guardian_set)?;
     println!("circuit contains {} gates", cs.n());
     Boolean::enforce_equal(cs, &is_valid, &Boolean::Constant(true))?;
     cs.finalize();

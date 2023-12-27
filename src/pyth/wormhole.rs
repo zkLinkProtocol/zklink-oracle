@@ -1,6 +1,6 @@
 use pairing::Engine;
 use sync_vm::{
-    circuit_structures::byte::Byte,
+    circuit_structures::byte::{Byte, IntoBytes as _},
     franklin_crypto::{
         bellman::{plonk::better_better_cs::cs::ConstraintSystem, SynthesisError},
         plonk::circuit::boolean::Boolean,
@@ -15,6 +15,7 @@ use sync_vm::{
 use crate::{
     gadgets::{
         ecdsa::Signature,
+        ethereum::Address,
         keccak160::{self, MerkleRoot},
     },
     utils::new_synthesis_error,
@@ -91,7 +92,7 @@ impl<E: Engine, const N: usize> Vaa<E, N> {
 
     /// Check if all VAA sigantures are signed by one from guardian set.
     /// There is not quorum check and you should make sure all signatures are valid.
-    pub fn check<CS: ConstraintSystem<E>>(
+    pub fn check_by_pubkey<CS: ConstraintSystem<E>>(
         &self,
         cs: &mut CS,
         guardian_set: &[(UInt256<E>, UInt256<E>)],
@@ -107,6 +108,34 @@ impl<E: Engine, const N: usize> Vaa<E, N> {
                 let x_is_equal = UInt256::equals(cs, &x, &pubkey.0)?;
                 let y_is_equal = UInt256::equals(cs, &y, &pubkey.1)?;
                 let is_equal = Boolean::and(cs, &x_is_equal, &y_is_equal)?;
+                is_matched.push(is_equal);
+            }
+            let is_matched = smart_or(cs, &is_matched)?;
+            is_ok.push(smart_and(cs, &[successful, is_matched])?)
+        }
+        let is_ok = smart_and(cs, &is_ok)?;
+        Ok(is_ok)
+    }
+
+    pub fn check_by_address<CS: ConstraintSystem<E>>(
+        &self,
+        cs: &mut CS,
+        guardian_set: &[Address<E>],
+    ) -> Result<Boolean, SynthesisError> {
+        if guardian_set.len() == 0 {
+            return Ok(Boolean::Constant(false));
+        }
+        let recovered = self.ecrecover(cs)?;
+        let mut is_ok = vec![];
+        for (successful, (x, y)) in recovered {
+            let (x, y) = (
+                x.into_be_bytes(cs)?.try_into().unwrap(),
+                y.into_be_bytes(cs)?.try_into().unwrap(),
+            );
+            let address = Address::from_pubkey(cs, &x, &y)?;
+            let mut is_matched = vec![];
+            for guardian in guardian_set {
+                let is_equal = guardian.equals(cs, &address)?;
                 is_matched.push(is_equal);
             }
             let is_matched = smart_or(cs, &is_matched)?;
@@ -342,7 +371,7 @@ mod tests {
                 .collect::<Result<Vec<_>, _>>()?
         };
 
-        let valid = vaa.check(cs, &guardian_set)?;
+        let valid = vaa.check_by_pubkey(cs, &guardian_set)?;
         Boolean::enforce_equal(cs, &valid, &Boolean::Constant(true))?;
         println!("hello");
         Ok(())

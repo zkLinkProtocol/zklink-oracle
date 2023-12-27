@@ -10,7 +10,10 @@ use sync_vm::{
 };
 
 use crate::{
-    gadgets::keccak160::{self, MerklePath, MerkleRoot},
+    gadgets::{
+        ethereum::Address,
+        keccak160::{self, MerklePath, MerkleRoot},
+    },
     utils::new_synthesis_error,
 };
 
@@ -90,14 +93,41 @@ pub struct PriceUpdates<E: Engine, const N1: usize, const N2: usize, const N3: u
 
 impl<E: Engine, const N1: usize, const N2: usize, const N3: usize> PriceUpdates<E, N1, N2, N3> {
     /// Check if the price updates and VAA are valid.
-    pub fn check<CS: ConstraintSystem<E>>(
+    pub fn check_by_pubkey<CS: ConstraintSystem<E>>(
         &self,
         cs: &mut CS,
         guardian_set: &[(UInt256<E>, UInt256<E>)],
     ) -> Result<Boolean, SynthesisError> {
-        let valid_signatures = self.check_vaa(cs, guardian_set)?;
+        let valid_signatures = self.check_vaa_by_pubkey(cs, guardian_set)?;
         let valid_updates = self.check_price_updates(cs)?;
         Boolean::and(cs, &valid_signatures, &valid_updates)
+    }
+
+    pub fn check_by_address<CS: ConstraintSystem<E>>(
+        &self,
+        cs: &mut CS,
+        guardian_set: &[Address<E>],
+    ) -> Result<Boolean, SynthesisError> {
+        let valid_signatures = self.check_vaa_by_address(cs, guardian_set)?;
+        let valid_updates = self.check_price_updates(cs)?;
+        Boolean::and(cs, &valid_signatures, &valid_updates)
+    }
+
+    /// Check if the VAA is valid.
+    pub fn check_vaa_by_pubkey<CS: ConstraintSystem<E>>(
+        &self,
+        cs: &mut CS,
+        guardian_set: &[(UInt256<E>, UInt256<E>)],
+    ) -> Result<Boolean, SynthesisError> {
+        self.vaa.check_by_pubkey(cs, guardian_set)
+    }
+
+    pub fn check_vaa_by_address<CS: ConstraintSystem<E>>(
+        &self,
+        cs: &mut CS,
+        guardian_set: &[Address<E>],
+    ) -> Result<Boolean, SynthesisError> {
+        self.vaa.check_by_address(cs, guardian_set)
     }
 
     /// Check if the price updates are valid.
@@ -112,15 +142,6 @@ impl<E: Engine, const N1: usize, const N2: usize, const N3: usize> PriceUpdates<
             result = Boolean::and(cs, &result, &check)?;
         }
         Ok(result)
-    }
-
-    /// Check if the VAA is valid.
-    pub fn check_vaa<CS: ConstraintSystem<E>>(
-        &self,
-        cs: &mut CS,
-        guardian_set: &[(UInt256<E>, UInt256<E>)],
-    ) -> Result<Boolean, SynthesisError> {
-        self.vaa.check(cs, guardian_set)
     }
 }
 

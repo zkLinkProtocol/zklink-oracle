@@ -79,7 +79,6 @@ impl<E: Engine> Address<E> {
     ) -> Result<Self, SynthesisError> {
         let pubkey = secp256k1::PublicKey::from_slice(witness).map_err(new_synthesis_error)?;
         let bytes = pubkey.serialize_uncompressed();
-        println!("hex bytes {:?}", hex::encode(&bytes));
         use sha3::Digest as _;
         let address: [u8; 32] = sha3::Keccak256::new_with_prefix(&bytes[1..])
             .finalize()

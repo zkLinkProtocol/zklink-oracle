@@ -373,7 +373,6 @@ mod tests {
 
         let valid = vaa.check_by_pubkey(cs, &guardian_set)?;
         Boolean::enforce_equal(cs, &valid, &Boolean::Constant(true))?;
-        println!("hello");
         Ok(())
     }
 

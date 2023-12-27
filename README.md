@@ -4,7 +4,7 @@ This is a plonkish circuit implementation of verification of a batch of price fe
 
 ### Usage
 
-Check out [the example](examples/verify_price.rs) to learn how to use. You can get a new base64-encoded VAA from Hermes' [`/api/latest_vaas`](https://hermes.pyth.network/docs/#/rest/latest_vaas).
+The entry circuit is `ZkLinkOracle`. It accepts a [`AccumulatorUpdateData`](https://github.com/pyth-network/pyth-crosschain/blob/6463f1a98fcaa63e3d60b128b46ff08181ce8c1f/pythnet/pythnet_sdk/src/wire.rs#L60-L66) that can be got by deserializing base64-encoded response from Hermes' [`/api/latest_vaas`](https://hermes.pyth.network/docs/#/rest/latest_vaas).
 
 ## LICENSE
 

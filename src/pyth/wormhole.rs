@@ -237,39 +237,6 @@ pub struct VaaPayload<E: Engine> {
 }
 
 impl<E: Engine> VaaPayload<E> {
-    pub fn new(bytes: [Byte<E>; LEN_MESSAGE]) -> Self {
-        let mut offset = 0;
-        let magic = bytes[offset..offset + LEN_MAGIC].try_into().unwrap();
-        offset += LEN_MAGIC;
-        let payload_type = bytes[offset..offset + LEN_PAYLOAD_TYPE].try_into().unwrap();
-        offset += LEN_PAYLOAD_TYPE;
-        let slot = bytes[offset..offset + LEN_SLOT].try_into().unwrap();
-        offset += LEN_SLOT;
-        let ring_size = bytes[offset..offset + LEN_RING_SIZE].try_into().unwrap();
-        offset += LEN_RING_SIZE;
-        let root = {
-            let hash = bytes[offset..offset + LEN_ROOT].try_into().unwrap();
-            MerkleRoot::new(hash)
-        };
-        Self {
-            magic,
-            payload_type,
-            slot,
-            ring_size,
-            root,
-        }
-    }
-    pub fn new_from_slice(bytes: &[Byte<E>]) -> Result<Self, SynthesisError> {
-        if bytes.len() != LEN_MESSAGE {
-            return Err(new_synthesis_error(format!(
-                "invalid bytes length {}, expect {}",
-                bytes.len(),
-                LEN_MESSAGE
-            )));
-        }
-        Ok(Self::new(bytes.try_into().unwrap()))
-    }
-
     pub fn to_bytes(&self) -> [Byte<E>; LEN_MESSAGE] {
         let mut bytes = [Byte::<E>::zero(); LEN_MESSAGE];
         let mut offset = 0;
@@ -316,9 +283,8 @@ impl<E: Engine> VaaPayload<E> {
 
 #[cfg(test)]
 mod tests {
-    use pairing::{bn256::Bn256, Engine};
+    use pairing::Engine;
     use sync_vm::{
-        circuit_structures::byte::Byte,
         franklin_crypto::{
             bellman::{plonk::better_better_cs::cs::ConstraintSystem, SynthesisError},
             plonk::circuit::boolean::Boolean,
@@ -332,64 +298,8 @@ mod tests {
         uint256_from_bytes_witness,
     };
 
-    pub fn bytes_constant_from_hex_str<E: Engine>(
-        hex_str: &str,
-    ) -> Result<Vec<Byte<E>>, SynthesisError> {
-        let bytes = hex::decode(hex_str)
-            .map_err(new_synthesis_error)?
-            .into_iter()
-            .map(|b| Byte::<E>::constant(b))
-            .collect::<Vec<_>>();
-        Ok(bytes)
-    }
-
     #[test]
     fn test_wormhole_payload() -> Result<(), SynthesisError> {
-        let hex_str = "415557560000000000069b993c00002710095bb7e5fa374ea08603a6698123d99101547a50";
-        let bytes = bytes_constant_from_hex_str::<Bn256>(hex_str)?;
-        let payload = super::VaaPayload::new_from_slice(&bytes)?;
-        {
-            bytes_assert_eq(&payload.magic, "41555756");
-            bytes_assert_eq(&payload.payload_type, "00");
-            bytes_assert_eq(&payload.slot, "00000000069b993c");
-            bytes_assert_eq(&payload.ring_size, "00002710");
-            bytes_assert_eq(
-                &payload.root.inner(),
-                "095bb7e5fa374ea08603a6698123d99101547a50",
-            );
-        }
-
-        bytes_assert_eq(&payload.to_bytes(), hex_str);
-        Ok(())
-    }
-
-    #[test]
-    fn test_wormhole_body() -> Result<(), SynthesisError> {
-        let hex_str = "655ccff800000000001ae101faedac5851e32b9b23b5f9411a8c2bac4aae3ed4dd7b811dd1a72ea4aa71000000000195faa401415557560000000000069b993c00002710095bb7e5fa374ea08603a6698123d99101547a50";
-        let bytes = bytes_constant_from_hex_str::<Bn256>(hex_str)?;
-        let body = super::VaaBody::new_from_slice(&bytes)?;
-        {
-            bytes_assert_eq(&body.timestamp, "655ccff8");
-            bytes_assert_eq(&body.nonce, "00000000");
-            bytes_assert_eq(&body.emitter_chain, "001a");
-            bytes_assert_eq(
-                &body.emitter_address,
-                "e101faedac5851e32b9b23b5f9411a8c2bac4aae3ed4dd7b811dd1a72ea4aa71",
-            );
-            bytes_assert_eq(&body.sequence, "000000000195faa4");
-            bytes_assert_eq(&body.consistency_level, "01");
-            bytes_assert_eq(
-                &body.payload.to_bytes(),
-                "415557560000000000069b993c00002710095bb7e5fa374ea08603a6698123d99101547a50",
-            );
-        }
-
-        bytes_assert_eq(&body.to_bytes(), hex_str);
-        Ok(())
-    }
-
-    #[test]
-    fn test_wormhole_payload_from_witness() -> Result<(), SynthesisError> {
         let cs = &mut create_test_constraint_system()?;
         let hex_str = "415557560000000000069b993c00002710095bb7e5fa374ea08603a6698123d99101547a50";
         let data = hex::decode(hex_str).unwrap();
@@ -400,7 +310,7 @@ mod tests {
     }
 
     #[test]
-    fn test_wormhole_body_from_witness() -> Result<(), SynthesisError> {
+    fn test_wormhole_body() -> Result<(), SynthesisError> {
         let cs = &mut create_test_constraint_system()?;
         let data = hex::decode(get_vaa()).unwrap();
         let vaa: wormhole_sdk::Vaa<&serde_wormhole::RawMessage> =
@@ -413,7 +323,7 @@ mod tests {
     }
 
     #[test]
-    fn test_vaa_from_witness() -> Result<(), SynthesisError> {
+    fn test_vaa() -> Result<(), SynthesisError> {
         let cs = &mut create_test_constraint_system()?;
         let data = hex::decode(get_vaa()).unwrap();
         let vaa: wormhole_sdk::Vaa<&serde_wormhole::RawMessage> =

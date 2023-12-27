@@ -1,15 +1,18 @@
 use pairing::Engine;
 use pythnet_sdk::wire::v1::AccumulatorUpdateData;
-use sync_vm::franklin_crypto::{
-    bellman::{
-        plonk::better_better_cs::cs::{Circuit, ConstraintSystem, Width4MainGateWithDNext},
-        SynthesisError,
+use sync_vm::{
+    franklin_crypto::{
+        bellman::{
+            plonk::better_better_cs::cs::{Circuit, ConstraintSystem, Width4MainGateWithDNext},
+            SynthesisError,
+        },
+        plonk::circuit::{allocated_num::Num, boolean::Boolean},
     },
-    plonk::circuit::boolean::Boolean,
+    vm::primitives::{uint256::UInt256, UInt64},
 };
 
 use crate::{
-    gadgets::ethereum::Address,
+    gadgets::{ethereum::Address, poseidon::circuit_poseidon_hash},
     pyth::{PriceUpdate, PriceUpdates, Vaa},
     utils::new_synthesis_error,
 };
@@ -21,7 +24,8 @@ pub mod utils;
 pub struct ZkLinkOracle<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICE: usize> {
     pub accumulator_update_data: Vec<AccumulatorUpdateData>,
     pub guardian_set: Vec<[u8; 20]>,
-    pub _marker: std::marker::PhantomData<E>,
+    pub old_prices_root: E::Fr,
+    pub new_prices_root: E::Fr,
 }
 
 impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> Circuit<E>
@@ -30,6 +34,12 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
     type MainGate = Width4MainGateWithDNext;
 
     fn synthesize<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
+        let mut prices_root = Num::alloc(cs, Some(self.old_prices_root))?;
+        let guardian_set = self
+            .guardian_set
+            .iter()
+            .map(|w| Address::from_address_wtiness(cs, w))
+            .collect::<Result<Vec<_>, _>>()?;
         for accumulator_update_data in self.accumulator_update_data.clone() {
             let pythnet_sdk::wire::v1::Proof::WormholeMerkle { vaa, updates } =
                 accumulator_update_data.proof;
@@ -52,15 +62,24 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
                 })?
             };
             let price_updates = PriceUpdates { vaa, price_updates };
-            let guardian_set = self
-                .guardian_set
-                .iter()
-                .map(|w| Address::from_address_wtiness(cs, w))
-                .collect::<Result<Vec<_>, _>>()?;
             let is_valid = price_updates.check_by_address(cs, &guardian_set)?;
-            // TODO: check price commitment
             Boolean::enforce_equal(cs, &is_valid, &Boolean::Constant(true))?;
+            for price_update in price_updates.price_updates {
+                let price_feed = price_update.message;
+                let feed_id = {
+                    let feed_id = UInt256::from_be_bytes_fixed(cs, &price_feed.feed_id)?;
+                    feed_id.to_num_unchecked(cs).unwrap_or_else(|_| Num::zero())
+                };
+                let price = {
+                    let mut price = price_feed.price;
+                    price.reverse();
+                    UInt64::from_bytes_le(cs, &price)?.into_num()
+                };
+                prices_root = circuit_poseidon_hash(cs, &[prices_root, feed_id, price])?[0];
+            }
         }
+        let new_prices_root = Num::alloc(cs, Some(self.new_prices_root))?;
+        new_prices_root.enforce_equal(cs, &prices_root)?;
         Ok(())
     }
 }
@@ -68,7 +87,10 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
 #[cfg(test)]
 mod tests {
     use base64::Engine as _;
-    use pairing::bn256::Bn256;
+    use pairing::{
+        bn256::Bn256,
+        ff::{Field, PrimeField, ScalarEngine},
+    };
     use pythnet_sdk::wire::v1::AccumulatorUpdateData;
     use sync_vm::franklin_crypto::bellman::{plonk::better_better_cs::cs::Circuit, SynthesisError};
 
@@ -96,7 +118,7 @@ mod tests {
             "8C82B2fd82FaeD2711d59AF0F2499D16e726f6b2",
             "11b39756C042441BE6D8650b69b54EbE715E2343",
             "54Ce5B4D348fb74B958e8966e2ec3dBd4958a7cd",
-            "eB5F7389Fa26941519f0863349C223b73a6DDEE7",
+            "15e7cAF07C4e3DC8e7C469f92C8Cd88FB8005a20",
             "74a3bf913953D695260D88BC1aA25A4eeE363ef0",
             "000aC0076727b35FBea2dAc28fEE5cCB0fEA768e",
             "AF45Ced136b9D9e24903464AE889F5C8a723FC14",
@@ -117,7 +139,11 @@ mod tests {
         let zklink_oracle = ZkLinkOracle::<Bn256, 1, 4> {
             accumulator_update_data: vec![accumulator_update_data],
             guardian_set,
-            _marker: std::marker::PhantomData,
+            old_prices_root: <<Bn256 as ScalarEngine>::Fr as Field>::zero(),
+            new_prices_root: <<Bn256 as ScalarEngine>::Fr as PrimeField>::from_str(
+                "19640501085786425332801180314099624462403385683682006822834626973405941447931",
+            )
+            .unwrap(),
         };
         zklink_oracle.synthesize(cs)?;
         println!("circuit contains {} gates", cs.n());

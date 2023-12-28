@@ -127,6 +127,10 @@ impl<E: Engine, const N: usize> Vaa<E, N> {
         }
         let recovered = self.ecrecover(cs)?;
         let mut is_ok = vec![];
+        let mut guardian_used = vec![];
+        for _ in 0..guardian_set.len() {
+            guardian_used.push(Boolean::alloc_from_witness(cs, Some(false))?);
+        }
         for (successful, (x, y)) in recovered {
             let (x, y) = (
                 x.into_be_bytes(cs)?.try_into().unwrap(),
@@ -134,8 +138,11 @@ impl<E: Engine, const N: usize> Vaa<E, N> {
             );
             let address = Address::from_pubkey(cs, &x, &y)?;
             let mut is_matched = vec![];
-            for guardian in guardian_set {
+            for (i, guardian) in guardian_set.iter().enumerate() {
+                // Make sure we use each guardian only once.
+                let guardian = guardian.mask(cs, &guardian_used[i].not())?;
                 let is_equal = guardian.equals(cs, &address)?;
+                guardian_used[i] = Boolean::or(cs, &guardian_used[i], &is_equal)?;
                 is_matched.push(is_equal);
             }
             let is_matched = smart_or(cs, &is_matched)?;

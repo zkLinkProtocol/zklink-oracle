@@ -35,6 +35,15 @@ impl<E: Engine> Address<E> {
         self.0
     }
 
+    /// Returns 0 address if condition is false, else self.
+    pub fn mask<CS: ConstraintSystem<E>>(
+        &self,
+        cs: &mut CS,
+        condition: &Boolean,
+    ) -> Result<Self, SynthesisError> {
+        Ok(Self(self.0.mask(cs, condition)?))
+    }
+
     /// Create address from bytes.
     pub fn from_bytes<CS: ConstraintSystem<E>>(
         cs: &mut CS,

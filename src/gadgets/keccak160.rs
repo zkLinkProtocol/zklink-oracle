@@ -41,7 +41,7 @@ pub fn digest<E: Engine, CS: ConstraintSystem<E>>(
 pub struct MerkleRoot<E: Engine>(Hash<E>);
 /// Circuit implementation of pyth
 /// [`MerklePath`](https://github.com/pyth-network/pyth-crosschain/blob/245cc231fd0acd5d91757ab29f474237c2a606aa/pythnet/pythnet_sdk/src/accumulators/merkle.rs#L39-L51)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct MerklePath<E: Engine, const N: usize>(pub [Hash<E>; N]);
 
 impl<E: Engine, const N: usize> MerklePath<E, N> {

@@ -22,7 +22,7 @@ use super::wormhole::Vaa;
 /// Circuit representation of pyth [`PriceUpdate`](https://github.com/pyth-network/pyth-crosschain/blob/178ad4cb0edff38f43d8e26f23d1d9e83448093c/pythnet/pythnet_sdk/src/wire.rs#L109-L112)
 ///
 /// `N` is the depth of merkle tree used by pyth, which is `10`` by now.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct PriceUpdate<E: Engine, const N: usize = 10> {
     pub message: PriceFeed<E>,
     pub proof: MerklePath<E, N>,
@@ -165,7 +165,7 @@ pub const LEN_PRICE_FEED: usize = LEN_PRICE_FEED_TYPE
     + LEN_EMA_CONF;
 /// Circuit representation of pyth
 /// [`Message::PriceFeedMessage`]((https://github.com/pyth-network/pyth-crosschain/blob/178ad4cb0edff38f43d8e26f23d1d9e83448093c/pythnet/pythnet_sdk/src/messages.rs#L36-L39))
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct PriceFeed<E: Engine> {
     pub price_feed_type: [Byte<E>; LEN_PRICE_FEED_TYPE],
     pub feed_id: [Byte<E>; LEN_FEED_ID],

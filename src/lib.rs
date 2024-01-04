@@ -5,6 +5,7 @@ use pairing::{
 };
 use pythnet_sdk::wire::v1::AccumulatorUpdateData;
 use sync_vm::{
+    circuit_structures::byte::Byte,
     franklin_crypto::{
         bellman::{
             plonk::better_better_cs::cs::{Circuit, ConstraintSystem, Width4MainGateWithDNext},
@@ -16,7 +17,7 @@ use sync_vm::{
         },
     },
     glue::prepacked_long_comparison,
-    vm::primitives::{uint256::UInt256, UInt64},
+    vm::primitives::{UInt128, UInt32, UInt64},
 };
 
 use crate::{
@@ -75,7 +76,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICE: usize> D
             guardian_set,
             old_prices_root: <<E as ScalarEngine>::Fr as Field>::zero(),
             commitment: <<E as ScalarEngine>::Fr as PrimeField>::from_str(
-                "16210541629283649756105712781647238574875806888369006837414086753574516872868",
+                "14282269052574546871186012787549977474958928608190269975251250759954740304151",
             )
             .unwrap(),
         }
@@ -88,7 +89,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
     type MainGate = Width4MainGateWithDNext;
 
     fn synthesize<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
-        let mut prices_root = Num::alloc(cs, Some(self.old_prices_root))?;
+        let mut prices_commitment = Num::alloc(cs, Some(self.old_prices_root))?;
         let guardian_set = self
             .guardian_set
             .iter()
@@ -119,6 +120,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
 
         let last_publish_time = UInt64::zero().into_num();
         let mut is_publish_time_increasing = Boolean::constant(true);
+        let mut prices_commitment_members = vec![prices_commitment];
         for price_updates in price_updates_batch.iter() {
             // Check signatures in VAA
             {
@@ -130,15 +132,59 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
                 for price_update in price_updates.price_updates {
                     let price_feed = price_update.message;
                     let feed_id = {
-                        let feed_id = UInt256::from_be_bytes_fixed(cs, &price_feed.feed_id)?;
-                        feed_id.to_num_unchecked(cs).map_err(new_synthesis_error)?
+                        // Due the limitation of zklink state tree, we can only store first 15 bytes of feed_id
+                        let mut bytes = [Byte::zero(); 16];
+                        bytes[1..].copy_from_slice(&price_feed.feed_id[0..15]);
+                        bytes.reverse();
+                        let feed_id = UInt128::from_bytes_le(cs, &bytes)?;
+                        feed_id.into_num()
                     };
                     let price = {
+                        // real exponent = 2^32 - exponent value in be_bytes (complement format)
+                        // normalized_price = 10^(18-real_exponent) * price
+                        let power_32_of_2 = {
+                            let two = {
+                                let one = AllocatedNum::one(cs);
+                                one.add(cs, &one)?
+                            };
+                            let exp = vec![
+                                Boolean::constant(false), // 1
+                                Boolean::constant(false), // 2
+                                Boolean::constant(false), // 4
+                                Boolean::constant(false), // 8
+                                Boolean::constant(false), // 16
+                                Boolean::constant(true),  // 32
+                            ];
+                            AllocatedNum::pow(cs, &two, exp)?
+                        };
+                        let price_exponent = {
+                            let mut price_exponent = price_feed.exponent;
+                            price_exponent.reverse();
+                            UInt32::from_bytes_le(cs, &price_exponent)?.into_num()
+                        };
+                        // for complement number, the real absolute value = 2^32 - complement value
+                        let absolute_price_exponent =
+                            power_32_of_2.sub(cs, &price_exponent.get_variable())?;
+                        let normalized_price_coefficient = {
+                            let eighteen =
+                                AllocatedNum::alloc(cs, || Ok(E::Fr::from_str("18").unwrap()))?;
+                            let normalized_price_exponent =
+                                Num::Variable(eighteen.sub(cs, &absolute_price_exponent)?);
+                            let normalized_price_exponent =
+                                normalized_price_exponent.into_bits_le(cs, Some(64))?;
+                            let ten =
+                                AllocatedNum::alloc(cs, || Ok(E::Fr::from_str("10").unwrap()))?;
+                            AllocatedNum::pow(cs, &ten, &normalized_price_exponent)?
+                        };
                         let mut price = price_feed.price;
                         price.reverse();
-                        UInt64::from_bytes_le(cs, &price)?.into_num()
+                        let num = UInt64::from_bytes_le(cs, &price)?.into_num();
+                        let normalized_price =
+                            num.mul(cs, &Num::Variable(normalized_price_coefficient))?;
+                        normalized_price
                     };
-                    prices_root = circuit_poseidon_hash(cs, &[prices_root, feed_id, price])?[0];
+                    prices_commitment_members.push(feed_id);
+                    prices_commitment_members.push(price);
                 }
             }
             // Check publish time is increasing
@@ -157,14 +203,15 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
                 )?;
             }
         }
+        prices_commitment = circuit_poseidon_hash(cs, prices_commitment_members.as_slice())?[0];
         Boolean::enforce_equal(cs, &is_publish_time_increasing, &Boolean::Constant(true))?;
 
         // Compute guardian set hash
-        let mut guardian_set_hash = Num::zero();
-        for guardian in guardian_set {
-            let address = guardian.inner().to_num_unchecked(cs)?;
-            guardian_set_hash = circuit_poseidon_hash(cs, &[guardian_set_hash, address])?[0];
-        }
+        let guardian_set_num = guardian_set
+            .iter()
+            .map(|g| g.inner().to_num_unchecked(cs))
+            .collect::<Result<Vec<_>, _>>()?;
+        let guardian_set_hash = circuit_poseidon_hash(cs, &guardian_set_num)?[0];
 
         let earliest_publish_time = {
             let mut earliest_publish_time =
@@ -172,9 +219,10 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
             earliest_publish_time.reverse();
             UInt64::from_bytes_le(cs, &earliest_publish_time)?.into_num()
         };
-        let commitment =
-            circuit_poseidon_hash(cs, &[guardian_set_hash, prices_root, earliest_publish_time])?[0];
-        println!("commitment: {:?}", commitment);
+        let commitment = circuit_poseidon_hash(
+            cs,
+            &[guardian_set_hash, prices_commitment, earliest_publish_time],
+        )?[0];
 
         let expected_commitment = {
             // Make commitment public input

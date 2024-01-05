@@ -339,6 +339,15 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
     }
 }
 
+// Gates of the circuit for the 13 signatures and 4 prices
+pub const GATES: usize = 13275521;
+
+/// Returns the maximum number of VAA (13 signatures + 4 prices) that can be verified by the circuit.
+pub fn max_vaa(power_of_tau: usize) -> usize {
+    let base = 2 as usize;
+    base.pow(power_of_tau as u32) / GATES
+}
+
 #[cfg(test)]
 mod tests {
     use base64::Engine as _;

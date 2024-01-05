@@ -41,7 +41,7 @@ pub mod utils;
 
 pub struct ZkLinkOracle<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICE: usize> {
     pub accumulator_update_data: Vec<AccumulatorUpdateData>,
-    pub guardian_set: [[u8; 20]; 19], // Wormhole has 19 Guardians
+    pub guardian_set: Vec<[u8; 20]>,
     pub old_prices_commitment: E::Fr,
     pub commitment: E::Fr,
 }
@@ -51,7 +51,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
 {
     pub fn new(
         accumulator_update_data: Vec<AccumulatorUpdateData>,
-        guardian_set: [[u8; 20]; 19],
+        guardian_set: Vec<[u8; 20]>,
         old_prices_commitment: BigUint,
     ) -> Result<Self, anyhow::Error> {
         let mut last_publish_time = 0;
@@ -365,7 +365,7 @@ mod tests {
             let bytes = base64::engine::general_purpose::STANDARD.decode(hex)?;
             AccumulatorUpdateData::try_from_slice(bytes.as_ref())?
         };
-        let guardian_set = [
+        let guardian_set = vec![
             "58CC3AE5C097b213cE3c81979e1B9f9570746AA5",
             "fF6CB952589BDE862c25Ef4392132fb9D4A42157",
             "114De8460193bdf3A2fCf81f86a09765F4762fD1",
@@ -386,7 +386,9 @@ mod tests {
             "5E1487F35515d02A92753504a8D75471b9f49EdB",
             "6FbEBc898F403E4773E95feB15E80C9A99c8348d",
         ]
-        .map(|guardian| hex::decode(guardian).unwrap().try_into().unwrap());
+        .iter()
+        .map(|guardian| hex::decode(guardian).unwrap().try_into().unwrap())
+        .collect();
         let zklink_oracle = ZkLinkOracle::<Bn256, 1, 4>::new(
             vec![accumulator_update_data],
             guardian_set,

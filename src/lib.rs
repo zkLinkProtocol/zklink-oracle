@@ -7,6 +7,7 @@ use pythnet_sdk::{
     wire::{from_slice, v1::AccumulatorUpdateData},
 };
 use secp256k1::{ecdsa::RecoveryId, Secp256k1};
+use serde::{Deserialize, Serialize};
 use serde_wormhole::RawMessage;
 use sha3::{Digest, Keccak256};
 use sync_vm::{
@@ -39,6 +40,7 @@ pub mod gadgets;
 pub mod pyth;
 pub mod utils;
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ZkLinkOracle<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICE: usize> {
     pub accumulator_update_data: Vec<AccumulatorUpdateData>,
     pub guardian_set: Vec<[u8; 20]>,

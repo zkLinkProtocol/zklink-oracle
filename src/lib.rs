@@ -1,7 +1,10 @@
 use std::ops::Mul as _;
 
 use num_bigint::BigUint;
-use pairing::{ff::PrimeField, Engine};
+use pairing::{
+    ff::{Field, PrimeField},
+    Engine,
+};
 use pythnet_sdk::{
     messages::Message,
     wire::{from_slice, v1::AccumulatorUpdateData},
@@ -44,8 +47,7 @@ pub mod utils;
 pub struct ZkLinkOracle<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICE: usize> {
     pub accumulator_update_data: Vec<AccumulatorUpdateData>,
     pub guardian_set: Vec<[u8; 20]>,
-    pub old_prices_commitment: E::Fr,
-    pub new_prices_commitment: E::Fr,
+    pub prices_commitment: E::Fr,
     pub commitment: E::Fr,
 }
 
@@ -55,12 +57,10 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
     pub fn new(
         accumulator_update_data: Vec<AccumulatorUpdateData>,
         guardian_set: Vec<[u8; 20]>,
-        old_prices_commitment: BigUint,
     ) -> Result<Self, anyhow::Error> {
         let mut last_publish_time = 0;
         let mut earliest_publish_time = 0;
-        let old_prices_commitment = fr_from_biguint::<E>(&old_prices_commitment)?;
-        let mut prices_commitment = old_prices_commitment;
+        let mut prices_commitments = vec![];
 
         let secp = Secp256k1::new();
         for data in accumulator_update_data.clone().into_iter() {
@@ -113,8 +113,8 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
                     anyhow::bail!("invalid price feed message")
                 };
             }
-            let mut prices_commitment_members = vec![prices_commitment];
             {
+                let mut prices_commitment_members = vec![];
                 for price_feed in price_feeds.iter() {
                     let feed_id = {
                         // Due the limitation of zklink state tree, we can only store first 15 bytes of feed_id
@@ -131,7 +131,8 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
                     prices_commitment_members.push(fr_from_biguint::<E>(&feed_id)?);
                     prices_commitment_members.push(fr_from_biguint::<E>(&price)?);
                 }
-                prices_commitment = poseidon_hash::<E>(&prices_commitment_members)[0];
+                let prices_commitment = poseidon_hash::<E>(&prices_commitment_members)[0];
+                prices_commitments.push(prices_commitment);
             }
             // Check publish time is increasing
             {
@@ -162,17 +163,20 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
         let earliest_publish_time =
             fr_from_biguint::<E>(&BigUint::from(earliest_publish_time as u64))?;
 
-        let commitment = poseidon_hash::<E>(&[
-            guardian_set_hash,
-            old_prices_commitment,
-            prices_commitment,
-            earliest_publish_time,
-        ])[0];
+        let prices_commitment =
+            prices_commitments
+                .into_iter()
+                .fold(<E::Fr as Field>::zero(), |mut acc, x| {
+                    Field::square(&mut acc);
+                    Field::add_assign(&mut acc, &x);
+                    acc
+                });
+        let commitment =
+            poseidon_hash::<E>(&[guardian_set_hash, prices_commitment, earliest_publish_time])[0];
         Ok(Self {
             accumulator_update_data,
             guardian_set,
-            old_prices_commitment,
-            new_prices_commitment: prices_commitment,
+            prices_commitment,
             commitment,
         })
     }
@@ -224,8 +228,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
 
         let last_publish_time = UInt64::zero().into_num();
         let mut is_publish_time_increasing = Boolean::constant(true);
-        let old_prices_commitment = Num::alloc(cs, Some(self.old_prices_commitment))?;
-        let mut prices_commitment = old_prices_commitment;
+        let mut prices_commitments = vec![];
         for price_updates in price_updates_batch.iter() {
             // Check signatures in VAA
             {
@@ -234,7 +237,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
             }
             // Compute price root
             {
-                let mut prices_commitment_members = vec![prices_commitment];
+                let mut prices_commitment_members = vec![];
                 for price_update in price_updates.price_updates {
                     let price_feed = price_update.message;
                     let feed_id = {
@@ -293,8 +296,9 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
                     prices_commitment_members.push(feed_id);
                     prices_commitment_members.push(price);
                 }
-                prices_commitment =
+                let prices_commitment =
                     circuit_poseidon_hash(cs, prices_commitment_members.as_slice())?[0];
+                prices_commitments.push(prices_commitment);
             }
             // Check publish time is increasing
             {
@@ -317,11 +321,21 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
                 )?;
             }
         }
-        let new_prices_commitment = {
-            let n = AllocatedNum::alloc_input(cs, || Ok(self.new_prices_commitment))?;
+
+        let prices_commitment =
+            prices_commitments
+                .into_iter()
+                .fold(Ok(Num::<E>::zero()), |acc, x| {
+                    let acc = acc?;
+                    let square = acc.mul(cs, &acc)?;
+                    square.add(cs, &x)
+                })?;
+        let expected_prices_commitment = {
+            let n = AllocatedNum::alloc_input(cs, || Ok(self.prices_commitment))?;
             Num::Variable(n)
         };
-        new_prices_commitment.enforce_equal(cs, &prices_commitment)?;
+        expected_prices_commitment.enforce_equal(cs, &prices_commitment)?;
+
         Boolean::enforce_equal(cs, &is_publish_time_increasing, &Boolean::Constant(true))?;
 
         // Compute guardian set hash
@@ -339,12 +353,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
         };
         let commitment = circuit_poseidon_hash(
             cs,
-            &[
-                guardian_set_hash,
-                old_prices_commitment,
-                prices_commitment,
-                earliest_publish_time,
-            ],
+            &[guardian_set_hash, prices_commitment, earliest_publish_time],
         )?[0];
 
         let expected_commitment = {
@@ -408,9 +417,8 @@ mod tests {
         .map(|guardian| hex::decode(guardian).unwrap().try_into().unwrap())
         .collect();
         let zklink_oracle = ZkLinkOracle::<Bn256, 1, 4>::new(
-            vec![accumulator_update_data],
+            vec![accumulator_update_data.clone(), accumulator_update_data],
             guardian_set,
-            (0 as u32).into(),
         )?;
         let cs = &mut create_test_constraint_system()?;
         zklink_oracle.synthesize(cs)?;

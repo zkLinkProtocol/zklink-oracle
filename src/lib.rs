@@ -39,6 +39,8 @@ use crate::{
     utils::new_synthesis_error,
 };
 
+pub use pythnet_sdk;
+
 pub mod gadgets;
 pub mod pyth;
 pub mod utils;

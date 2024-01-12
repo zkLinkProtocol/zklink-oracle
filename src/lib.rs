@@ -52,7 +52,7 @@ pub use sync_vm::franklin_crypto;
 pub struct ZkLinkOracle<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICE: usize> {
     pub accumulator_update_data: Vec<AccumulatorUpdateData>,
     pub guardian_set: Vec<[u8; 20]>,
-    pub prices_commitment: E::Fr,
+    pub public_input_data: PublicInputData<E>,
     pub commitment: E::Fr,
 }
 
@@ -181,8 +181,12 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
         Ok(Self {
             accumulator_update_data,
             guardian_set,
-            prices_commitment,
             commitment,
+            public_input_data: PublicInputData {
+                guardian_set_hash,
+                prices_commitment,
+                earliest_publish_time,
+            },
         })
     }
 
@@ -226,6 +230,21 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
         .collect();
         Self::new(accumulator_update_data, guardian_set).unwrap()
     }
+
+    pub fn public_input_data(&self) -> PublicInputData<E> {
+        self.public_input_data.clone()
+    }
+
+    pub fn verification_num(&self) -> usize {
+        self.accumulator_update_data.len()
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PublicInputData<E> {
+    pub guardian_set_hash: E::Fr,
+    pub prices_commitment: E::Fr,
+    pub earliest_publish_time: E::Fr,
 }
 
 fn fr_from_biguint<E: Engine>(biguint: &BigUint) -> Result<E::Fr, SynthesisError> {

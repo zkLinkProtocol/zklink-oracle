@@ -46,6 +46,8 @@ pub mod gadgets;
 pub mod pyth;
 pub mod utils;
 
+pub use sync_vm::franklin_crypto;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ZkLinkOracle<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICE: usize> {
     pub accumulator_update_data: Vec<AccumulatorUpdateData>,

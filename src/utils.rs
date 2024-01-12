@@ -36,7 +36,7 @@ pub fn uint256_from_bytes_with_mask<E: Engine, CS: ConstraintSystem<E>>(
     mask: &Boolean,
 ) -> Result<UInt256<E>, SynthesisError> {
     let mut chunks_be_arr = [Byte::empty(); 32];
-    chunks_be_arr.copy_from_slice(&bytes[..]);
+    chunks_be_arr.copy_from_slice(bytes);
     let uint256 = UInt256::from_be_bytes_fixed(cs, &chunks_be_arr)?;
     let uint256 = uint256.mask(cs, mask)?;
     Ok(uint256)
@@ -47,7 +47,7 @@ pub fn uint256_from_bytes<E: Engine, CS: ConstraintSystem<E>>(
     bytes: &[Byte<E>],
 ) -> Result<UInt256<E>, SynthesisError> {
     let mut chunks_be_arr = [Byte::empty(); 32];
-    chunks_be_arr.copy_from_slice(&bytes[..]);
+    chunks_be_arr.copy_from_slice(bytes);
     let uint256 = UInt256::from_be_bytes_fixed(cs, &chunks_be_arr)?;
     Ok(uint256)
 }

@@ -63,6 +63,10 @@ impl<E: Engine, const N: usize> MerklePath<E, N> {
     pub fn len(&self) -> usize {
         N
     }
+
+    pub fn is_empty(&self) -> bool {
+        N == 0
+    }
 }
 
 impl<E: Engine> MerkleRoot<E> {
@@ -71,7 +75,7 @@ impl<E: Engine> MerkleRoot<E> {
     }
 
     pub fn inner(&self) -> Hash<E> {
-        self.0.clone()
+        self.0
     }
 
     /// Compute hash of a leaf node.
@@ -96,7 +100,6 @@ impl<E: Engine> MerkleRoot<E> {
             prepacked_long_comparison(cs, &[ln], &[rn], &[WIDTH_HASH_BYTES * 8])?;
         let (l, r): (Hash<_>, Hash<_>) = {
             let zipped = (0..WIDTH_HASH_BYTES)
-                .into_iter()
                 .map(|i| {
                     let li = l[i].inner;
                     let ri = r[i].inner;

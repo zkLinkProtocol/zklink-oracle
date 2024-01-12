@@ -58,11 +58,11 @@ fn convert_uint256_to_field_element<'a, E: Engine, F: PrimeField, CS: Constraint
         .collect::<Vec<Num<E>>>();
     // let raw_limbs = [Default::default(); 4].into_iter().collect::<Vec<Num<E>>>();
     let mut fe = unsafe {
-        FieldElement::<E, F>::alloc_from_limbs_unchecked(cs, &raw_limbs, &rns_strategy, false)?
+        FieldElement::<E, F>::alloc_from_limbs_unchecked(cs, &raw_limbs, rns_strategy, false)?
     };
     let is_zero = FieldElement::is_zero(&mut fe, cs)?;
     exceptions.push(is_zero);
-    FieldElement::conditionally_select(cs, &is_zero, &FieldElement::one(&rns_strategy), &fe)
+    FieldElement::conditionally_select(cs, &is_zero, &FieldElement::one(rns_strategy), &fe)
 }
 
 const CHUNK_BITLEN: usize = 64;
@@ -84,7 +84,7 @@ impl<E: Engine> Signature<E> {
         &self,
         cs: &mut CS,
         message_hash: &UInt256<E>,
-    ) -> Result<(Boolean, (UInt256<E>, UInt256<E>)), SynthesisError> {
+    ) -> Result<EcRecoverRes<E>, SynthesisError> {
         ecrecover(cs, &self.recid, &self.r, &self.s, message_hash)
     }
 
@@ -95,7 +95,7 @@ impl<E: Engine> Signature<E> {
         message_hash: &UInt256<E>,
         pubkey: &(UInt256<E>, UInt256<E>),
     ) -> Result<Boolean, SynthesisError> {
-        let (success, (x, y)) = self.ecrecover(cs, &message_hash)?;
+        let (success, (x, y)) = self.ecrecover(cs, message_hash)?;
         let x_is_equal = UInt256::equals(cs, &x, &pubkey.0)?;
         let y_is_equal = UInt256::equals(cs, &y, &pubkey.1)?;
         let valid = smart_and(cs, &[x_is_equal, y_is_equal, success])?;
@@ -160,14 +160,16 @@ impl<E: Engine> CSAllocatable<E> for Signature<E> {
     }
 }
 
+pub type EcRecoverRes<E> = (Boolean, (UInt256<E>, UInt256<E>));
+
 /// Recover the public key from the signature and the message hash.
-pub fn ecrecover<'a, E: Engine, CS: ConstraintSystem<E>>(
+pub fn ecrecover<E: Engine, CS: ConstraintSystem<E>>(
     cs: &mut CS,
     recid: &UInt32<E>,
     r_as_u64x4: &UInt256<E>,
     s_as_u64x4: &UInt256<E>,
     message_hash_as_u64x4: &UInt256<E>,
-) -> Result<(Boolean, (UInt256<E>, UInt256<E>)), SynthesisError> {
+) -> Result<EcRecoverRes<E>, SynthesisError> {
     // Init parameters
     type G = sync_vm::secp256k1::PointAffine;
     type Base = <G as GenericCurveAffine>::Base;
@@ -191,7 +193,7 @@ pub fn ecrecover<'a, E: Engine, CS: ConstraintSystem<E>>(
     let two_inv = two.inverse().unwrap();
     let mut minus_one = E::Fr::one();
     minus_one.negate();
-    let mut minus_two = minus_one.clone();
+    let mut minus_two = minus_one;
     minus_two.double();
 
     let table = cs.get_table(BITWISE_LOGICAL_OPS_TABLE_NAME)?;
@@ -217,15 +219,15 @@ pub fn ecrecover<'a, E: Engine, CS: ConstraintSystem<E>>(
     )?);
     let mut lc = LinearCombination::zero();
     // 2 * x_overflow + 1 * y_is_odd - recid = 0
-    lc.add_assign_boolean_with_coeff(&x_overflow, two.clone());
+    lc.add_assign_boolean_with_coeff(&x_overflow, two);
     lc.add_assign_boolean_with_coeff(&y_is_odd, E::Fr::one());
-    lc.add_assign_number_with_coeff(&recid.inner, minus_one.clone());
+    lc.add_assign_number_with_coeff(&recid.inner, minus_one);
     lc.enforce_zero(cs)?;
 
     // x = r + n if x_overflow else r
     let (r_plus_n_as_u64x4, of) = r_as_u64x4.add(cs, &secp_n_as_u64x4)?;
     let mut x_as_u64x4 =
-        UInt256::conditionally_select(cs, &x_overflow, &r_plus_n_as_u64x4, &r_as_u64x4)?;
+        UInt256::conditionally_select(cs, &x_overflow, &r_plus_n_as_u64x4, r_as_u64x4)?;
     let error = Boolean::and(cs, &x_overflow, &of)?;
     exception_flags.push(error);
 
@@ -252,20 +254,20 @@ pub fn ecrecover<'a, E: Engine, CS: ConstraintSystem<E>>(
 
     let mut r_fe = convert_uint256_to_field_element::<E, Scalar, CS>(
         cs,
-        &r_as_u64x4,
+        r_as_u64x4,
         &rns_strategy_for_scalar_field,
         &mut exception_flags,
     )?;
     let mut s_fe = convert_uint256_to_field_element::<E, Scalar, CS>(
         cs,
-        &s_as_u64x4,
+        s_as_u64x4,
         &rns_strategy_for_scalar_field,
         &mut exception_flags,
     )?;
     // NB: although it is not strictly an exception we also assume that hash is never zero as field element
     let mut message_hash_fe = convert_uint256_to_field_element::<E, Scalar, CS>(
         cs,
-        &message_hash_as_u64x4,
+        message_hash_as_u64x4,
         &rns_strategy_for_scalar_field,
         &mut exception_flags,
     )?;
@@ -336,7 +338,7 @@ pub fn ecrecover<'a, E: Engine, CS: ConstraintSystem<E>>(
         (Some(fr), Some(y_is_odd)) => {
             let mut tmp = fr
                 .sqrt()
-                .expect(&format!("should be a quadratic residue: {}", fr));
+                .unwrap_or_else(|| panic!("should be a quadratic residue: {}", fr));
             let tmp_is_odd = tmp.into_repr().as_ref()[0] & 1u64 != 0;
             if tmp_is_odd ^ y_is_odd {
                 tmp.negate();
@@ -383,7 +385,7 @@ pub fn ecrecover<'a, E: Engine, CS: ConstraintSystem<E>>(
             a_xor_b.get_variable(),
             y_is_odd_var,
         ];
-        let coeffs = [E::Fr::one(), minus_two.clone(), E::Fr::zero(), minus_one];
+        let coeffs = [E::Fr::one(), minus_two, E::Fr::zero(), minus_one];
 
         cs.begin_gates_batch_for_step()?;
         cs.apply_single_lookup_gate(&vars[..table.width()], table.clone())?;
@@ -445,13 +447,13 @@ pub fn ecrecover<'a, E: Engine, CS: ConstraintSystem<E>>(
 
     let mut q_x_chunks_be: Vec<_> = q_x_chunks
         .get_vars()
-        .into_iter()
+        .iter()
         .map(|el| Byte::from_num_unconstrained(cs, Num::Variable(*el)))
         .collect();
     q_x_chunks_be.reverse();
     let mut q_y_chunks_be: Vec<_> = q_y_chunks
         .get_vars()
-        .into_iter()
+        .iter()
         .map(|el| Byte::from_num_unconstrained(cs, Num::Variable(*el)))
         .collect();
     q_y_chunks_be.reverse();

@@ -74,7 +74,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
                 anyhow::bail!("expected {} prices, got {}", NUM_PRICES, updates.len())
             }
             let vaa: wormhole_sdk::Vaa<&serde_wormhole::RawMessage> =
-                serde_wormhole::from_slice(&vaa.as_ref())?;
+                serde_wormhole::from_slice(vaa.as_ref())?;
             // Check signatures in VAA
             {
                 let (header, body): (Header, Body<&RawMessage>) = vaa.clone().into();
@@ -100,9 +100,9 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
                     let address: [u8; 32] =
                         Keccak256::new_with_prefix(&pubkey[1..]).finalize().into();
                     let address: [u8; 20] = address[address.len() - 20..].try_into()?;
-                    let found = guardian_set.iter().find(|g| g == &&address).is_some();
+                    let found = guardian_set.iter().any(|g| g == &address);
                     if !found {
-                        anyhow::bail!("invalid signature {}", hex::encode(&signature.signature));
+                        anyhow::bail!("invalid signature {}", hex::encode(signature.signature));
                     }
                 }
             }
@@ -130,7 +130,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
                     // normalized_price = 10^(18-real_exponent) * price
                     let price = {
                         let exponent = (18 + price_feed.exponent) as u32;
-                        let coefficient = BigUint::from(10 as u32).pow(exponent);
+                        let coefficient = BigUint::from(10u32).pow(exponent);
                         coefficient.mul(&BigUint::try_from(price_feed.price)?)
                     };
                     prices_commitment_members.push(fr_from_biguint::<E>(&feed_id)?);
@@ -200,7 +200,6 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
             AccumulatorUpdateData::try_from_slice(bytes.as_ref()).unwrap()
         };
         let accumulator_update_data = (0..num_accumulator_update_dara)
-            .into_iter()
             .map(|_| accumulator_update_data.clone())
             .collect::<Vec<_>>();
 
@@ -241,7 +240,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PublicInputData<E> {
+pub struct PublicInputData<E: Engine> {
     pub guardian_set_hash: E::Fr,
     pub prices_commitment: E::Fr,
     pub earliest_publish_time: E::Fr,
@@ -275,7 +274,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
                 accumulator_update_data.proof;
             let vaa = {
                 let vaa: wormhole_sdk::Vaa<&serde_wormhole::RawMessage> =
-                    serde_wormhole::from_slice(&vaa.as_ref()).unwrap();
+                    serde_wormhole::from_slice(vaa.as_ref()).unwrap();
                 Vaa::<_, NUM_SIGNATURES_TO_VERIFY>::from_vaa_witness(cs, vaa)?
             };
             let price_updates: [_; NUM_PRICES] = {
@@ -354,9 +353,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
                         let mut price = price_feed.price;
                         price.reverse();
                         let num = UInt64::from_bytes_le(cs, &price)?.into_num();
-                        let normalized_price =
-                            num.mul(cs, &Num::Variable(normalized_price_coefficient))?;
-                        normalized_price
+                        num.mul(cs, &Num::Variable(normalized_price_coefficient))?
                     };
                     prices_commitment_members.push(feed_id);
                     prices_commitment_members.push(price);
@@ -390,13 +387,12 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
         let prices_commitment =
             prices_commitments
                 .into_iter()
-                .fold(Ok(Num::<E>::zero()), |acc, x| {
-                    let acc = acc?;
+                .try_fold(Num::<E>::zero(), |acc, x| {
                     let square = acc.mul(cs, &acc)?;
                     square.add(cs, &x)
                 })?;
         let expected_prices_commitment = {
-            let n = AllocatedNum::alloc_input(cs, || Ok(self.prices_commitment))?;
+            let n = AllocatedNum::alloc_input(cs, || Ok(self.public_input_data.prices_commitment))?;
             Num::Variable(n)
         };
         expected_prices_commitment.enforce_equal(cs, &prices_commitment)?;
@@ -436,7 +432,7 @@ pub const GATES: usize = 13275521;
 
 /// Returns the maximum number of VAA (13 signatures + 4 prices) that can be verified by the circuit.
 pub fn max_vaa(power_of_tau: usize) -> usize {
-    let base = 2 as usize;
+    let base = 2usize;
     base.pow(power_of_tau as u32) / GATES
 }
 
@@ -487,6 +483,7 @@ mod tests {
         )?;
         let cs = &mut create_test_constraint_system()?;
         zklink_oracle.synthesize(cs)?;
+        assert!(cs.is_satisfied());
         println!("circuit contains {} gates", cs.n());
         Ok(())
     }

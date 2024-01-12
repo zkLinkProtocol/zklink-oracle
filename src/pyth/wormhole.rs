@@ -49,7 +49,6 @@ impl<E: Engine, const N: usize> Vaa<E, N> {
         }
 
         let signatures = (0..N)
-            .into_iter()
             .map(|i| {
                 let signature = header.signatures[i].signature;
                 Signature::from_bytes_witness(cs, &signature)
@@ -74,7 +73,7 @@ impl<E: Engine, const N: usize> Vaa<E, N> {
     pub fn ecrecover<CS: ConstraintSystem<E>>(
         &self,
         cs: &mut CS,
-    ) -> Result<[(Boolean, (UInt256<E>, UInt256<E>)); N], SynthesisError> {
+    ) -> Result<[crate::gadgets::ecdsa::EcRecoverRes<E>; N], SynthesisError> {
         let msg_hash = {
             let bytes = self.body.to_bytes();
             use crate::gadgets::keccak256::digest;
@@ -84,8 +83,8 @@ impl<E: Engine, const N: usize> Vaa<E, N> {
         };
 
         let mut pubkeys = [Default::default(); N];
-        for i in 0..self.signatures.len() {
-            pubkeys[i] = self.signatures[i].ecrecover(cs, &msg_hash)?;
+        for (i, pubkey) in pubkeys.iter_mut().enumerate().take(self.signatures.len()) {
+            *pubkey = self.signatures[i].ecrecover(cs, &msg_hash)?;
         }
         Ok(pubkeys)
     }
@@ -97,7 +96,7 @@ impl<E: Engine, const N: usize> Vaa<E, N> {
         cs: &mut CS,
         guardian_set: &[(UInt256<E>, UInt256<E>)],
     ) -> Result<Boolean, SynthesisError> {
-        if guardian_set.len() == 0 {
+        if guardian_set.is_empty() {
             return Ok(Boolean::Constant(false));
         }
         let recovered = self.ecrecover(cs)?;
@@ -122,7 +121,7 @@ impl<E: Engine, const N: usize> Vaa<E, N> {
         cs: &mut CS,
         guardian_set: &[Address<E>],
     ) -> Result<Boolean, SynthesisError> {
-        if guardian_set.len() == 0 {
+        if guardian_set.is_empty() {
             return Ok(Boolean::Constant(false));
         }
         let recovered = self.ecrecover(cs)?;

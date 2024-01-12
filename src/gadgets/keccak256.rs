@@ -25,7 +25,7 @@ pub fn digest<E: Engine, CS: ConstraintSystem<E>>(
         true,
         RANGE_CHECK_SINGLE_APPLICATION_TABLE_NAME,
     )?;
-    let result = keccak_gadget.digest_from_bytes(cs, &bytes)?;
+    let result = keccak_gadget.digest_from_bytes(cs, bytes)?;
     let digest = keccak_output_into_bytes(cs, result)?;
     Ok(digest)
 }

@@ -138,7 +138,7 @@ impl<E: Engine, const N1: usize, const N2: usize, const N3: usize> PriceUpdates<
         let root = self.vaa.merkle_root();
         let mut result = Boolean::constant(true);
         for price_update in self.price_updates.iter() {
-            let check = price_update.check(cs, &root)?;
+            let check = price_update.check(cs, root)?;
             result = Boolean::and(cs, &result, &check)?;
         }
         Ok(result)
@@ -235,7 +235,7 @@ impl<E: Engine> PriceFeed<E> {
 
     pub fn to_bytes<CS: ConstraintSystem<E>>(&self, _: &mut CS) -> [Byte<E>; LEN_PRICE_FEED] {
         let mut bytes = [Byte::<E>::zero(); LEN_PRICE_FEED];
-        let mut offset = 0 as usize;
+        let mut offset = 0usize;
         bytes[offset..offset + LEN_PRICE_FEED_TYPE].copy_from_slice(&self.price_feed_type);
         offset += LEN_PRICE_FEED_TYPE;
         bytes[offset..offset + LEN_FEED_ID].copy_from_slice(&self.feed_id);

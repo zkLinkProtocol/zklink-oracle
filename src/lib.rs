@@ -266,7 +266,8 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
 
     fn synthesize<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
         utils::add_bitwise_logic_and_range_table(cs)?;
-        circuit_rescue_hash(cs, &[Num::Constant(E::Fr::zero())])?; // Just to standardize the proof format
+        let temp_variable = Num::alloc(cs, Some(E::Fr::from_str("0xff").unwrap()))?;
+        circuit_rescue_hash(cs, &[temp_variable])?; // Just to standardize the proof format
 
         let guardian_set = self
             .guardian_set

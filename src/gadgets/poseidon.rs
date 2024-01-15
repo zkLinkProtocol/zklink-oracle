@@ -12,12 +12,12 @@ const RATE: usize = 2;
 pub fn circuit_poseidon_hash<E: Engine, CS: ConstraintSystem<E>>(
     cs: &mut CS,
     input: &[Num<E>],
-) -> Result<[Num<E>; RATE], SynthesisError> {
+) -> Result<Num<E>, SynthesisError> {
     let params = PoseidonParams::<E, RATE, WIDTH>::default();
-    CircuitGenericSponge::hash_num(cs, input, &params, None)
+    Ok(CircuitGenericSponge::hash_num(cs, input, &params, None)?[0])
 }
 
-pub fn poseidon_hash<E: Engine>(input: &[E::Fr]) -> [E::Fr; RATE] {
+pub fn poseidon_hash<E: Engine>(input: &[E::Fr]) -> E::Fr {
     let params = PoseidonParams::<E, RATE, WIDTH>::default();
-    GenericSponge::hash(input, &params, None)
+    GenericSponge::hash(input, &params, None)[0]
 }

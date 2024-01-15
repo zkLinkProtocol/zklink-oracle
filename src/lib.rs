@@ -46,6 +46,9 @@ pub mod gadgets;
 pub mod pyth;
 pub mod utils;
 
+use crate::franklin_crypto::bellman::plonk::better_better_cs::cs::{Gate, GateInternal};
+use crate::franklin_crypto::plonk::circuit::custom_rescue_gate::Rescue5CustomGate;
+use crate::gadgets::rescue::circuit_rescue_hash;
 pub use sync_vm::franklin_crypto;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -136,7 +139,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
                     prices_commitment_members.push(fr_from_biguint::<E>(&feed_id)?);
                     prices_commitment_members.push(fr_from_biguint::<E>(&price)?);
                 }
-                let prices_commitment = poseidon_hash::<E>(&prices_commitment_members)[0];
+                let prices_commitment = poseidon_hash::<E>(&prices_commitment_members);
                 prices_commitments.push(prices_commitment);
             }
             // Check publish time is increasing
@@ -162,7 +165,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
                     fr_from_biguint::<E>(&u)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            poseidon_hash::<E>(&input)[0]
+            poseidon_hash::<E>(&input)
         };
 
         let earliest_publish_time =
@@ -177,7 +180,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
                     acc
                 });
         let commitment =
-            poseidon_hash::<E>(&[guardian_set_hash, prices_commitment, earliest_publish_time])[0];
+            poseidon_hash::<E>(&[guardian_set_hash, prices_commitment, earliest_publish_time]);
         Ok(Self {
             accumulator_update_data,
             guardian_set,
@@ -263,6 +266,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
 
     fn synthesize<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
         utils::add_bitwise_logic_and_range_table(cs)?;
+        circuit_rescue_hash(cs, &[Num::Constant(E::Fr::zero())])?; // Just to standardize the proof format
 
         let guardian_set = self
             .guardian_set
@@ -361,7 +365,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
                     prices_commitment_members.push(price);
                 }
                 let prices_commitment =
-                    circuit_poseidon_hash(cs, prices_commitment_members.as_slice())?[0];
+                    circuit_poseidon_hash(cs, prices_commitment_members.as_slice())?;
                 prices_commitments.push(prices_commitment);
             }
             // Check publish time is increasing
@@ -406,7 +410,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
             .iter()
             .map(|g| g.inner().to_num_unchecked(cs))
             .collect::<Result<Vec<_>, _>>()?;
-        let guardian_set_hash = circuit_poseidon_hash(cs, &guardian_set_num)?[0];
+        let guardian_set_hash = circuit_poseidon_hash(cs, &guardian_set_num)?;
 
         let earliest_publish_time = {
             let mut earliest_publish_time = if let Some(batch) = price_updates_batch.first() {
@@ -420,7 +424,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
         let commitment = circuit_poseidon_hash(
             cs,
             &[guardian_set_hash, prices_commitment, earliest_publish_time],
-        )?[0];
+        )?;
 
         let expected_commitment = {
             // Make commitment public input
@@ -429,6 +433,13 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
         };
         expected_commitment.enforce_equal(cs, &commitment)?;
         Ok(())
+    }
+
+    fn declare_used_gates() -> Result<Vec<Box<dyn GateInternal<E>>>, SynthesisError> {
+        Ok(vec![
+            Self::MainGate::default().into_internal(),
+            Rescue5CustomGate.into_internal(), // Just to standardize the proof format
+        ])
     }
 }
 

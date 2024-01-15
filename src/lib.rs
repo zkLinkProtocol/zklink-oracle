@@ -409,8 +409,11 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
         let guardian_set_hash = circuit_poseidon_hash(cs, &guardian_set_num)?[0];
 
         let earliest_publish_time = {
-            let mut earliest_publish_time =
-                price_updates_batch[0].price_updates[0].message.publish_time;
+            let mut earliest_publish_time = if let Some(batch) = price_updates_batch.first() {
+                batch.price_updates[0].message.publish_time
+            } else {
+                [Byte::zero(); 8]
+            };
             earliest_publish_time.reverse();
             UInt64::from_bytes_le(cs, &earliest_publish_time)?.into_num()
         };

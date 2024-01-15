@@ -1,3 +1,7 @@
+use crate::franklin_crypto::bellman::plonk::better_better_cs::cs::{
+    LookupTableApplication, PolyIdentifier,
+};
+use crate::franklin_crypto::plonk::circuit::tables::inscribe_default_range_table_for_bit_width_over_first_three_columns;
 use num_bigint::BigUint;
 use pairing::ff::{PrimeField, ScalarEngine};
 use pairing::Engine;
@@ -6,6 +10,8 @@ use sync_vm::circuit_structures::byte::Byte;
 use sync_vm::franklin_crypto::bellman::SynthesisError;
 use sync_vm::franklin_crypto::plonk::circuit::boolean::Boolean;
 use sync_vm::traits::CSAllocatable;
+use sync_vm::vm::tables::BitwiseLogicTable;
+use sync_vm::vm::VM_BITWISE_LOGICAL_OPS_TABLE_NAME;
 use sync_vm::{
     franklin_crypto::{
         bellman::plonk::better_better_cs::cs::ConstraintSystem, plonk::circuit::allocated_num::Num,
@@ -78,27 +84,42 @@ pub fn uint256_from_repr_witness<E: Engine, CS: ConstraintSystem<E>>(
     Ok(uint256_and_num_from_repr_witness(cs, repr)?.0)
 }
 
+pub fn add_bitwise_logic_and_range_table<E: Engine, CS: ConstraintSystem<E>>(
+    cs: &mut CS,
+) -> Result<(), SynthesisError> {
+    let columns3 = vec![
+        PolyIdentifier::VariablesPolynomial(0),
+        PolyIdentifier::VariablesPolynomial(1),
+        PolyIdentifier::VariablesPolynomial(2),
+    ];
+
+    if cs.get_table(VM_BITWISE_LOGICAL_OPS_TABLE_NAME).is_err() {
+        let name = VM_BITWISE_LOGICAL_OPS_TABLE_NAME;
+        let bitwise_logic_table = LookupTableApplication::new(
+            name,
+            BitwiseLogicTable::new(name, 8),
+            columns3.clone(),
+            None,
+            true,
+        );
+        cs.add_table(bitwise_logic_table)?;
+    };
+    inscribe_default_range_table_for_bit_width_over_first_three_columns(cs, 16)?;
+    Ok(())
+}
+
 #[cfg(test)]
 pub mod testing {
     use pairing::{bn256::Bn256, Engine};
     use sync_vm::{
         circuit_structures::byte::Byte,
-        franklin_crypto::{
-            bellman::{
-                plonk::better_better_cs::{
-                    cs::{
-                        ConstraintSystem, PlonkCsWidth4WithNextStepAndCustomGatesParams,
-                        TrivialAssembly,
-                    },
-                    data_structures::PolyIdentifier,
-                    gates::selector_optimized_with_d_next::SelectorOptimizedWidth4MainGateWithDNext,
-                    lookup_tables::LookupTableApplication,
-                },
-                SynthesisError,
+        franklin_crypto::bellman::{
+            plonk::better_better_cs::{
+                cs::{PlonkCsWidth4WithNextStepAndCustomGatesParams, TrivialAssembly},
+                gates::selector_optimized_with_d_next::SelectorOptimizedWidth4MainGateWithDNext,
             },
-            plonk::circuit::tables::inscribe_default_range_table_for_bit_width_over_first_three_columns,
+            SynthesisError,
         },
-        vm::{tables::BitwiseLogicTable, VM_BITWISE_LOGICAL_OPS_TABLE_NAME},
     };
 
     pub fn bytes_assert_eq<E: Engine, T: ToString>(bytes: &[Byte<E>], expected_hex: T) {
@@ -118,24 +139,7 @@ pub mod testing {
         SynthesisError,
     > {
         let (mut cs, _, _) = sync_vm::testing::create_test_artifacts_with_optimized_gate();
-        let columns3 = vec![
-            PolyIdentifier::VariablesPolynomial(0),
-            PolyIdentifier::VariablesPolynomial(1),
-            PolyIdentifier::VariablesPolynomial(2),
-        ];
-
-        if cs.get_table(VM_BITWISE_LOGICAL_OPS_TABLE_NAME).is_err() {
-            let name = VM_BITWISE_LOGICAL_OPS_TABLE_NAME;
-            let bitwise_logic_table = LookupTableApplication::new(
-                name,
-                BitwiseLogicTable::new(&name, 8),
-                columns3.clone(),
-                None,
-                true,
-            );
-            cs.add_table(bitwise_logic_table)?;
-        };
-        inscribe_default_range_table_for_bit_width_over_first_three_columns(&mut cs, 16)?;
+        super::add_bitwise_logic_and_range_table(&mut cs).unwrap();
         Ok(cs)
     }
 }

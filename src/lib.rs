@@ -262,6 +262,8 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
     type MainGate = Width4MainGateWithDNext;
 
     fn synthesize<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
+        utils::add_bitwise_logic_and_range_table(cs)?;
+
         let guardian_set = self
             .guardian_set
             .iter()
@@ -438,12 +440,12 @@ pub fn max_vaa(power_of_tau: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use super::ZkLinkOracle;
     use base64::Engine as _;
     use pairing::bn256::Bn256;
     use pythnet_sdk::wire::v1::AccumulatorUpdateData;
     use sync_vm::franklin_crypto::bellman::plonk::better_better_cs::cs::Circuit;
-
-    use crate::{utils::testing::create_test_constraint_system, ZkLinkOracle};
+    use sync_vm::testing::create_test_artifacts_with_optimized_gate;
 
     #[test]
     fn test_zklink_oracle() -> Result<(), anyhow::Error> {
@@ -481,8 +483,8 @@ mod tests {
             vec![accumulator_update_data.clone(), accumulator_update_data],
             guardian_set,
         )?;
-        let cs = &mut create_test_constraint_system()?;
-        zklink_oracle.synthesize(cs)?;
+        let (mut cs, _, _) = create_test_artifacts_with_optimized_gate();
+        zklink_oracle.synthesize(&mut cs)?;
         assert!(cs.is_satisfied());
         println!("circuit contains {} gates", cs.n());
         Ok(())

@@ -18,7 +18,7 @@ use sync_vm::{
     circuit_structures::byte::Byte,
     franklin_crypto::{
         bellman::{
-            plonk::better_better_cs::cs::{Circuit, ConstraintSystem, Width4MainGateWithDNext},
+            plonk::better_better_cs::cs::{Circuit, ConstraintSystem},
             SynthesisError,
         },
         plonk::circuit::{
@@ -50,8 +50,10 @@ use crate::franklin_crypto::bellman::plonk::better_better_cs::cs::{Gate, GateInt
 use crate::franklin_crypto::plonk::circuit::custom_rescue_gate::Rescue5CustomGate;
 use crate::gadgets::rescue::circuit_rescue_hash;
 pub use sync_vm::franklin_crypto;
+use crate::franklin_crypto::bellman::plonk::better_better_cs::gates::selector_optimized_with_d_next::SelectorOptimizedWidth4MainGateWithDNext;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(bound = "")]
 pub struct ZkLinkOracle<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICE: usize> {
     pub accumulator_update_data: Vec<AccumulatorUpdateData>,
     pub guardian_set: Vec<[u8; 20]>,
@@ -243,6 +245,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(bound = "")]
 pub struct PublicInputData<E: Engine> {
     pub guardian_set_hash: E::Fr,
     pub prices_commitment: E::Fr,
@@ -262,11 +265,11 @@ fn fr_from_biguint<E: Engine>(biguint: &BigUint) -> Result<E::Fr, SynthesisError
 impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> Circuit<E>
     for ZkLinkOracle<E, NUM_SIGNATURES_TO_VERIFY, NUM_PRICES>
 {
-    type MainGate = Width4MainGateWithDNext;
+    type MainGate = SelectorOptimizedWidth4MainGateWithDNext;
 
     fn synthesize<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
         utils::add_bitwise_logic_and_range_table(cs)?;
-        let temp_variable = Num::alloc(cs, Some(E::Fr::from_str("0xff").unwrap()))?;
+        let temp_variable = Num::alloc(cs, Some(E::Fr::one()))?;
         circuit_rescue_hash(cs, &[temp_variable])?; // Just to standardize the proof format
 
         let guardian_set = self
@@ -399,7 +402,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
                     square.add(cs, &x)
                 })?;
         let expected_prices_commitment = {
-            let n = AllocatedNum::alloc_input(cs, || Ok(self.public_input_data.prices_commitment))?;
+            let n = AllocatedNum::alloc(cs, || Ok(self.public_input_data.prices_commitment))?;
             Num::Variable(n)
         };
         expected_prices_commitment.enforce_equal(cs, &prices_commitment)?;

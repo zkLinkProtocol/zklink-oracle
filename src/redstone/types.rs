@@ -210,4 +210,45 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_decimal_value() -> anyhow::Result<()> {
+        use secp256k1::{
+            ecdsa::{RecoverableSignature, RecoveryId},
+            Message,
+        };
+
+        let data_package = DataPackage::new(
+            vec![DataPoint::new("AVAX", "36.2488073814028")],
+            1705311690000,
+        );
+        let bytes = data_package.serialize();
+        println!("serialized bytes: {}", hex::encode(&bytes),);
+
+        use sha3::{Digest, Keccak256};
+        let mut hasher = <Keccak256 as Digest>::new();
+        Digest::update(&mut hasher, &bytes);
+        let hash = Digest::finalize(hasher);
+        println!("hash: {}", hex::encode(hash),);
+
+        use base64::prelude::*;
+        let signatures = BASE64_STANDARD.decode("mtH5bAg88x91ezOw72ssQnlYm/BInBw6e+sABdIIDdIzqq5g/a/uGWNi7Vtq90mOe6B+qnJfC8WgQQFs5Upn1hs=").unwrap();
+        println!("signature: {}", hex::encode(&signatures));
+
+        // Ethereum adds 27 to the recovery id to get the v value
+        let rec_id = RecoveryId::from_i32(signatures[64] as i32 - 27).unwrap();
+        let recoverable_signature =
+            RecoverableSignature::from_compact(&signatures[..64], rec_id).unwrap();
+        let message = Message::from_digest_slice(hash.as_ref()).unwrap();
+        let pubkey = recoverable_signature.recover(&message).unwrap();
+
+        let mut hasher = <Keccak256 as Digest>::new();
+        Digest::update(&mut hasher, &pubkey.serialize_uncompressed()[1..]);
+        let recovered_addr = &Digest::finalize(hasher)[12..];
+
+        let expected_addr = hex::decode("109B4a318A4F5ddcbCA6349B45f881B4137deaFB").unwrap();
+        assert_eq!(expected_addr, recovered_addr);
+
+        Ok(())
+    }
 }

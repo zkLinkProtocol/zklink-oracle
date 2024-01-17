@@ -1,8 +1,10 @@
 use crate::franklin_crypto::bellman::plonk::better_better_cs::cs::ConstraintSystem;
 use crate::franklin_crypto::bellman::SynthesisError;
 use crate::franklin_crypto::plonk::circuit::allocated_num::Num;
+use advanced_circuit_component::rescue_poseidon::{
+    CircuitGenericSponge, CustomGate, HashParams, RescueParams,
+};
 use pairing::Engine;
-use sync_vm::rescue_poseidon::{CircuitGenericSponge, CustomGate, HashParams, RescueParams};
 
 pub fn circuit_rescue_hash<E: Engine, CS: ConstraintSystem<E>>(
     cs: &mut CS,

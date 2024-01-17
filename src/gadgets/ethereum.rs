@@ -1,9 +1,6 @@
 use core::fmt;
 
-use num::traits::{FromBytes, ToBytes};
-use num_bigint::BigUint;
-use pairing::Engine;
-use sync_vm::{
+use advanced_circuit_component::{
     circuit_structures::byte::Byte,
     franklin_crypto::{
         bellman::{plonk::better_better_cs::cs::ConstraintSystem, SynthesisError},
@@ -11,6 +8,9 @@ use sync_vm::{
     },
     vm::primitives::uint256::UInt256,
 };
+use num::traits::{FromBytes, ToBytes};
+use num_bigint::BigUint;
+use pairing::Engine;
 
 use crate::utils::{self, new_synthesis_error};
 
@@ -107,7 +107,7 @@ impl<E: Engine> Address<E> {
 
 #[cfg(test)]
 mod tests {
-    use sync_vm::{
+    use advanced_circuit_component::{
         circuit_structures::byte::Byte,
         franklin_crypto::{bellman::SynthesisError, plonk::circuit::boolean::Boolean},
     };

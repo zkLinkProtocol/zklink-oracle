@@ -1,5 +1,4 @@
-use pairing::Engine;
-use sync_vm::{
+use advanced_circuit_component::{
     circuit_structures::byte::Byte,
     franklin_crypto::{
         bellman::{plonk::better_better_cs::cs::ConstraintSystem, SynthesisError},
@@ -10,6 +9,7 @@ use sync_vm::{
     },
     scheduler::block_header::keccak_output_into_bytes,
 };
+use pairing::Engine;
 
 // cost about 26000 gates for each block
 pub fn digest<E: Engine, CS: ConstraintSystem<E>>(
@@ -32,7 +32,9 @@ pub fn digest<E: Engine, CS: ConstraintSystem<E>>(
 
 #[cfg(test)]
 mod tests {
-    use sync_vm::{circuit_structures::byte::Byte, franklin_crypto::bellman::SynthesisError};
+    use advanced_circuit_component::{
+        circuit_structures::byte::Byte, franklin_crypto::bellman::SynthesisError,
+    };
 
     use crate::utils::testing::create_test_constraint_system;
 

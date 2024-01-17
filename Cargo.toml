@@ -8,9 +8,7 @@ edition = "2021"
 [dependencies]
 hex = "0.4.3"
 num-bigint = "0.4.4"
-sync_vm = { git = "https://github.com/zkLinkProtocol/advanced-circuit-component", branch = "v1.3.3", features = [
-  "external_testing",
-] }
+advanced_circuit_component = { git = "https://github.com/zkLinkProtocol/advanced-circuit-component", branch = "main", features = ["external_testing"] }
 pairing = { package = "pairing_ce", version = "0.28.5" }
 base64 = "0.21.5"
 wormhole-sdk = { git = "https://github.com/wormhole-foundation/wormhole", tag = "v2.17.1" }

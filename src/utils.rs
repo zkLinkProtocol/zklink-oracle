@@ -2,22 +2,22 @@ use crate::franklin_crypto::bellman::plonk::better_better_cs::cs::{
     LookupTableApplication, PolyIdentifier,
 };
 use crate::franklin_crypto::plonk::circuit::tables::inscribe_default_range_table_for_bit_width_over_first_three_columns;
-use num_bigint::BigUint;
-use pairing::ff::{PrimeField, ScalarEngine};
-use pairing::Engine;
-use std::str::FromStr;
-use sync_vm::circuit_structures::byte::Byte;
-use sync_vm::franklin_crypto::bellman::SynthesisError;
-use sync_vm::franklin_crypto::plonk::circuit::boolean::Boolean;
-use sync_vm::traits::CSAllocatable;
-use sync_vm::vm::tables::BitwiseLogicTable;
-use sync_vm::vm::VM_BITWISE_LOGICAL_OPS_TABLE_NAME;
-use sync_vm::{
+use advanced_circuit_component::circuit_structures::byte::Byte;
+use advanced_circuit_component::franklin_crypto::bellman::SynthesisError;
+use advanced_circuit_component::franklin_crypto::plonk::circuit::boolean::Boolean;
+use advanced_circuit_component::traits::CSAllocatable;
+use advanced_circuit_component::vm::tables::BitwiseLogicTable;
+use advanced_circuit_component::vm::VM_BITWISE_LOGICAL_OPS_TABLE_NAME;
+use advanced_circuit_component::{
     franklin_crypto::{
         bellman::plonk::better_better_cs::cs::ConstraintSystem, plonk::circuit::allocated_num::Num,
     },
     vm::primitives::uint256::UInt256,
 };
+use num_bigint::BigUint;
+use pairing::ff::{PrimeField, ScalarEngine};
+use pairing::Engine;
+use std::str::FromStr;
 
 pub fn new_synthesis_error<T: ToString>(msg: T) -> SynthesisError {
     let err = std::io::Error::new(std::io::ErrorKind::Other, msg.to_string());
@@ -110,8 +110,7 @@ pub fn add_bitwise_logic_and_range_table<E: Engine, CS: ConstraintSystem<E>>(
 
 #[cfg(test)]
 pub mod testing {
-    use pairing::{bn256::Bn256, Engine};
-    use sync_vm::{
+    use advanced_circuit_component::{
         circuit_structures::byte::Byte,
         franklin_crypto::bellman::{
             plonk::better_better_cs::{
@@ -121,6 +120,7 @@ pub mod testing {
             SynthesisError,
         },
     };
+    use pairing::{bn256::Bn256, Engine};
 
     pub fn bytes_assert_eq<E: Engine, T: ToString>(bytes: &[Byte<E>], expected_hex: T) {
         let bytes = bytes
@@ -138,7 +138,8 @@ pub mod testing {
         >,
         SynthesisError,
     > {
-        let (mut cs, _, _) = sync_vm::testing::create_test_artifacts_with_optimized_gate();
+        let (mut cs, _, _) =
+            advanced_circuit_component::testing::create_test_artifacts_with_optimized_gate();
         super::add_bitwise_logic_and_range_table(&mut cs).unwrap();
         Ok(cs)
     }

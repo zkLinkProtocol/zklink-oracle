@@ -1,20 +1,6 @@
 use std::ops::Mul as _;
 
-use base64::Engine as _;
-use num_bigint::BigUint;
-use pairing::{
-    ff::{Field, PrimeField},
-    Engine,
-};
-use pythnet_sdk::{
-    messages::Message,
-    wire::{from_slice, v1::AccumulatorUpdateData},
-};
-use secp256k1::{ecdsa::RecoveryId, Secp256k1};
-use serde::{Deserialize, Serialize};
-use serde_wormhole::RawMessage;
-use sha3::{Digest, Keccak256};
-use sync_vm::{
+use advanced_circuit_component::{
     circuit_structures::byte::Byte,
     franklin_crypto::{
         bellman::{
@@ -29,6 +15,20 @@ use sync_vm::{
     glue::prepacked_long_comparison,
     vm::primitives::{UInt128, UInt32, UInt64},
 };
+use base64::Engine as _;
+use num_bigint::BigUint;
+use pairing::{
+    ff::{Field, PrimeField},
+    Engine,
+};
+use pythnet_sdk::{
+    messages::Message,
+    wire::{from_slice, v1::AccumulatorUpdateData},
+};
+use secp256k1::{ecdsa::RecoveryId, Secp256k1};
+use serde::{Deserialize, Serialize};
+use serde_wormhole::RawMessage;
+use sha3::{Digest, Keccak256};
 use wormhole_sdk::vaa::{Body, Header};
 
 use crate::{
@@ -49,7 +49,7 @@ pub mod utils;
 use crate::franklin_crypto::bellman::plonk::better_better_cs::cs::{Gate, GateInternal};
 use crate::franklin_crypto::plonk::circuit::custom_rescue_gate::Rescue5CustomGate;
 use crate::gadgets::rescue::circuit_rescue_hash;
-pub use sync_vm::franklin_crypto;
+pub use advanced_circuit_component::franklin_crypto;
 use crate::franklin_crypto::bellman::plonk::better_better_cs::gates::selector_optimized_with_d_next::SelectorOptimizedWidth4MainGateWithDNext;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -459,11 +459,11 @@ pub fn max_vaa(power_of_tau: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::ZkLinkOracle;
+    use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::cs::Circuit;
+    use advanced_circuit_component::testing::create_test_artifacts_with_optimized_gate;
     use base64::Engine as _;
     use pairing::bn256::Bn256;
     use pythnet_sdk::wire::v1::AccumulatorUpdateData;
-    use sync_vm::franklin_crypto::bellman::plonk::better_better_cs::cs::Circuit;
-    use sync_vm::testing::create_test_artifacts_with_optimized_gate;
 
     #[test]
     fn test_zklink_oracle() -> Result<(), anyhow::Error> {

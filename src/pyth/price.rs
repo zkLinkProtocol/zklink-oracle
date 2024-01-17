@@ -1,5 +1,4 @@
-use pairing::Engine;
-use sync_vm::{
+use advanced_circuit_component::{
     circuit_structures::byte::Byte,
     franklin_crypto::{
         bellman::{plonk::better_better_cs::cs::ConstraintSystem, SynthesisError},
@@ -8,6 +7,7 @@ use sync_vm::{
     traits::CSAllocatable,
     vm::primitives::uint256::UInt256,
 };
+use pairing::Engine;
 
 use crate::{
     gadgets::{
@@ -263,9 +263,11 @@ mod tests {
         gadgets::keccak160,
         utils::testing::{bytes_assert_eq, create_test_constraint_system},
     };
+    use advanced_circuit_component::franklin_crypto::{
+        bellman::SynthesisError, plonk::circuit::boolean::Boolean,
+    };
     use pairing::bn256::Bn256;
     use pythnet_sdk::wire::from_slice;
-    use sync_vm::franklin_crypto::{bellman::SynthesisError, plonk::circuit::boolean::Boolean};
 
     #[test]
     fn test_price_feed() -> Result<(), SynthesisError> {
@@ -305,7 +307,7 @@ mod tests {
         let update = super::PriceUpdate::<Bn256, 10>::from_price_update_witness(cs, update)?;
         {
             let root = {
-                use sync_vm::traits::CSAllocatable;
+                use advanced_circuit_component::traits::CSAllocatable;
 
                 let hash = hex::decode("095bb7e5fa374ea08603a6698123d99101547a50")
                     .unwrap()

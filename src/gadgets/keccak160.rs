@@ -1,7 +1,6 @@
 use std::usize;
 
-use pairing::Engine;
-use sync_vm::{
+use advanced_circuit_component::{
     circuit_structures::byte::Byte,
     franklin_crypto::{
         bellman::{plonk::better_better_cs::cs::ConstraintSystem, SynthesisError},
@@ -9,6 +8,7 @@ use sync_vm::{
     },
     glue::prepacked_long_comparison,
 };
+use pairing::Engine;
 
 use crate::utils::{new_synthesis_error, num_from_be_bytes};
 
@@ -150,14 +150,14 @@ mod tests {
     };
 
     use super::Hash;
-    use pairing::Engine;
-    use sync_vm::{
+    use advanced_circuit_component::{
         circuit_structures::byte::Byte,
         franklin_crypto::{
             bellman::{plonk::better_better_cs::cs::ConstraintSystem, SynthesisError},
             plonk::circuit::boolean::Boolean,
         },
     };
+    use pairing::Engine;
 
     #[test]
     fn test_keccak160() -> Result<(), SynthesisError> {

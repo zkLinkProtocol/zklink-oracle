@@ -1,11 +1,11 @@
-use pairing::Engine;
-use sync_vm::{
+use advanced_circuit_component::{
     franklin_crypto::{
         bellman::{plonk::better_better_cs::cs::ConstraintSystem, SynthesisError},
         plonk::circuit::allocated_num::Num,
     },
     rescue_poseidon::{CircuitGenericSponge, GenericSponge, PoseidonParams},
 };
+use pairing::Engine;
 const WIDTH: usize = 3;
 const RATE: usize = 2;
 

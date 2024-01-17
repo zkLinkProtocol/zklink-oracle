@@ -1,10 +1,8 @@
-use num::traits::FromBytes;
-use num_bigint::BigUint;
-use sync_vm::circuit_structures::byte::IntoBytes as _;
-use sync_vm::secp256k1::fq::Fq as Secp256Fq;
-use sync_vm::secp256k1::fr::Fr as Secp256Fr;
-use sync_vm::traits::{CSAllocatable, CSWitnessable};
-use sync_vm::{
+use advanced_circuit_component::circuit_structures::byte::IntoBytes as _;
+use advanced_circuit_component::secp256k1::fq::Fq as Secp256Fq;
+use advanced_circuit_component::secp256k1::fr::Fr as Secp256Fr;
+use advanced_circuit_component::traits::{CSAllocatable, CSWitnessable};
+use advanced_circuit_component::{
     circuit_structures::{byte::Byte, utils::can_not_be_false_if_flagged},
     franklin_crypto::{
         self,
@@ -30,6 +28,8 @@ use sync_vm::{
         primitives::{uint256::UInt256, UInt32, UInt64},
     },
 };
+use num::traits::FromBytes;
+use num_bigint::BigUint;
 
 use crate::utils::new_synthesis_error;
 
@@ -171,7 +171,7 @@ pub fn ecrecover<E: Engine, CS: ConstraintSystem<E>>(
     message_hash_as_u64x4: &UInt256<E>,
 ) -> Result<EcRecoverRes<E>, SynthesisError> {
     // Init parameters
-    type G = sync_vm::secp256k1::PointAffine;
+    type G = advanced_circuit_component::secp256k1::PointAffine;
     type Base = <G as GenericCurveAffine>::Base;
     type Scalar = <G as GenericCurveAffine>::Scalar;
     use franklin_crypto::plonk::circuit::bigint_new::bigint::repr_to_biguint;
@@ -474,13 +474,13 @@ pub fn ecrecover<E: Engine, CS: ConstraintSystem<E>>(
 
 #[cfg(test)]
 mod tests {
-    use num::Num as _;
-    use num_bigint::BigUint;
-    use sync_vm::{
+    use advanced_circuit_component::{
         franklin_crypto::{bellman::SynthesisError, plonk::circuit::boolean::Boolean},
         traits::CSAllocatable,
         vm::primitives::uint256::UInt256,
     };
+    use num::Num as _;
+    use num_bigint::BigUint;
 
     use crate::{gadgets::ecdsa::Signature, utils::testing::create_test_constraint_system};
 

@@ -1,5 +1,4 @@
-use pairing::Engine;
-use sync_vm::{
+use advanced_circuit_component::{
     circuit_structures::byte::{Byte, IntoBytes as _},
     franklin_crypto::{
         bellman::{plonk::better_better_cs::cs::ConstraintSystem, SynthesisError},
@@ -11,6 +10,7 @@ use sync_vm::{
         primitives::uint256::UInt256,
     },
 };
+use pairing::Engine;
 
 use crate::{
     gadgets::{
@@ -318,14 +318,14 @@ impl<E: Engine> VaaPayload<E> {
 
 #[cfg(test)]
 mod tests {
-    use pairing::Engine;
-    use sync_vm::{
+    use advanced_circuit_component::{
         franklin_crypto::{
             bellman::{plonk::better_better_cs::cs::ConstraintSystem, SynthesisError},
             plonk::circuit::boolean::Boolean,
         },
         vm::primitives::uint256::UInt256,
     };
+    use pairing::Engine;
 
     use crate::utils::{
         new_synthesis_error,

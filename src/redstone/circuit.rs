@@ -19,7 +19,7 @@ pub struct CircuitDataPoint<E: Engine> {
 }
 
 impl<E: Engine> CircuitDataPoint<E> {
-    pub fn from_data_package<CS: ConstraintSystem<E>>(
+    pub fn from_witness<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         witness: DataPoint,
     ) -> Result<Self, SynthesisError> {
@@ -58,6 +58,10 @@ impl<E: Engine> CircuitSignedDataPackage<E> {
         signature: [u8; 65],
     ) -> Result<Self, SynthesisError> {
         let data_package = CircuitDataPackage::from_witness(cs, data_package)?;
+        let mut signature = signature.clone();
+        if signature[64] >= 27 {
+            signature[64] -= 27;
+        }
         let signature = Signature::from_bytes_witness(cs, &signature)?;
         Ok(Self {
             data_package,
@@ -140,7 +144,7 @@ impl<E: Engine> CircuitDataPackage<E> {
         let data_points = witness.sorted_data_points();
         let data_points = data_points
             .into_iter()
-            .map(|data_point| CircuitDataPoint::from_data_package(cs, data_point))
+            .map(|data_point| CircuitDataPoint::from_witness(cs, data_point))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             data_points,
@@ -176,6 +180,7 @@ mod tests {
     use sync_vm::franklin_crypto::bellman::SynthesisError;
 
     use crate::{
+        gadgets::ethereum::Address,
         redstone::types::{DataPackage, DataPoint},
         utils::testing::{bytes_assert_eq, create_test_constraint_system},
     };
@@ -205,6 +210,30 @@ mod tests {
 
     #[test]
     fn test_check_by_address() -> Result<(), SynthesisError> {
+        let cs = &mut create_test_constraint_system()?;
+        let address = Address::from_address_wtiness(
+            cs,
+            &hex::decode("109B4a318A4F5ddcbCA6349B45f881B4137deaFB")
+                .unwrap()
+                .try_into()
+                .unwrap(),
+        )?;
+        let signature  = hex::decode("9ad1f96c083cf31f757b33b0ef6b2c4279589bf0489c1c3a7beb0005d2080dd233aaae60fdafee196362ed5b6af7498e7ba07eaa725f0bc5a041016ce54a67d61b").unwrap();
+
+        let data_package = DataPackage::new(
+            vec![DataPoint::new("AVAX", "36.2488073814028")],
+            1705311690000,
+        );
+
+        let circuit_signed_data_package = super::CircuitSignedDataPackage::from_witness(
+            cs,
+            data_package,
+            signature.try_into().unwrap(),
+        )?;
+
+        let is_valid = circuit_signed_data_package.check_by_address(cs, &[address])?;
+        assert!(is_valid.get_value().unwrap());
+
         Ok(())
     }
 }

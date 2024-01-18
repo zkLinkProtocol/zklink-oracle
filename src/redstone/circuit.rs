@@ -87,11 +87,8 @@ impl<E: Engine> CircuitSignedDataPackage<E> {
     pub fn check_by_address<CS: ConstraintSystem<E>>(
         &self,
         cs: &mut CS,
-        guardian_set: &[Address<E>],
+        guardian: &Address<E>,
     ) -> Result<Boolean, SynthesisError> {
-        if guardian_set.is_empty() {
-            return Ok(Boolean::Constant(false));
-        }
         let (successful, (x, y)) = self.ecrecover(cs)?;
 
         let is_matched = {
@@ -100,12 +97,7 @@ impl<E: Engine> CircuitSignedDataPackage<E> {
                 y.into_be_bytes(cs)?.try_into().unwrap(),
             );
             let address = Address::from_pubkey(cs, &x, &y)?;
-            let mut is_matched = Boolean::constant(false);
-            for (_, guardian) in guardian_set.iter().enumerate() {
-                let is_equal = guardian.equals(cs, &address)?;
-                is_matched = Boolean::or(cs, &is_matched, &is_equal)?;
-            }
-            is_matched
+            guardian.equals(cs, &address)?
         };
 
         let is_ok = Boolean::and(cs, &is_matched, &successful)?;
@@ -231,7 +223,7 @@ mod tests {
             signature.try_into().unwrap(),
         )?;
 
-        let is_valid = circuit_signed_data_package.check_by_address(cs, &[address])?;
+        let is_valid = circuit_signed_data_package.check_by_address(cs, &address)?;
         assert!(is_valid.get_value().unwrap());
 
         Ok(())

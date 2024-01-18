@@ -10,9 +10,59 @@ use sync_vm::{
 };
 
 use crate::gadgets::{ecdsa::Signature, ethereum::Address};
+use std::convert::TryInto;
 
 use super::types::{DataPackage, DataPoint};
 
+#[derive(Debug, Clone)]
+pub struct CircuitSignedPrice<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize> {
+    pub signed_data_packages: [CircuitSignedDataPackage<E>; NUM_SIGNATURES_TO_VERIFY],
+    pub guardians: [Address<E>; NUM_SIGNATURES_TO_VERIFY],
+}
+
+impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize>
+    CircuitSignedPrice<E, NUM_SIGNATURES_TO_VERIFY>
+{
+    pub fn from_witness<CS: ConstraintSystem<E>>(
+        &self,
+        cs: &mut CS,
+        witness: [(DataPackage, [u8; 65], [u8; 20]); NUM_SIGNATURES_TO_VERIFY],
+    ) -> Result<Self, SynthesisError> {
+        let mut signed_data_packages = vec![];
+        let mut guardians = vec![];
+        for (data_package, signature, guardian) in witness.into_iter() {
+            let signed_package_data =
+                CircuitSignedDataPackage::from_witness(cs, data_package, signature);
+            let guardian = Address::<E>::from_address_wtiness(cs, &guardian)?;
+            signed_data_packages.push(signed_package_data?);
+            guardians.push(guardian);
+        }
+        let signed_data_packages: [_; NUM_SIGNATURES_TO_VERIFY] =
+            signed_data_packages.try_into().unwrap();
+        let guardians = guardians.try_into().unwrap();
+
+        Ok(Self {
+            signed_data_packages,
+            guardians,
+        })
+    }
+
+    pub fn check_by_addresses<CS: ConstraintSystem<E>>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<Boolean, SynthesisError> {
+        let mut is_valid = Boolean::constant(true);
+
+        for i in 0..NUM_SIGNATURES_TO_VERIFY {
+            let current_is_valid =
+                self.signed_data_packages[i].check_by_address(cs, &self.guardians[i])?;
+            is_valid = Boolean::and(cs, &is_valid, &current_is_valid)?;
+        }
+        Ok(is_valid)
+    }
+}
+
+#[derive(Clone, Debug, Copy)]
 pub struct CircuitDataPoint<E: Engine> {
     pub data_feed_id: [Byte<E>; 32],
     pub value: [Byte<E>; super::DEFAULT_NUM_VALUE_BS],
@@ -46,6 +96,7 @@ impl<E: Engine> CircuitDataPoint<E> {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct CircuitSignedDataPackage<E: Engine> {
     pub data_package: CircuitDataPackage<E>,
     pub signature: Signature<E>,
@@ -105,6 +156,7 @@ impl<E: Engine> CircuitSignedDataPackage<E> {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct CircuitDataPackage<E: Engine> {
     pub data_points: Vec<CircuitDataPoint<E>>,
     pub timestamp: [Byte<E>; super::TIMESTAMP_BS],

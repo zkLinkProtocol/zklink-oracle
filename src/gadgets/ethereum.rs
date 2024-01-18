@@ -15,6 +15,7 @@ use sync_vm::{
 use crate::utils::{self, new_synthesis_error};
 
 /// Circuit representation of Ethereum address.
+#[derive(Debug, Clone)]
 pub struct Address<E: Engine>(UInt256<E>);
 
 impl<E: Engine> fmt::Display for Address<E> {

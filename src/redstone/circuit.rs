@@ -15,13 +15,13 @@ use std::convert::TryInto;
 use super::types::{DataPackage, DataPoint};
 
 #[derive(Debug, Clone)]
-pub struct CircuitSignedPrice<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize> {
-    pub signed_data_packages: [CircuitSignedDataPackage<E>; NUM_SIGNATURES_TO_VERIFY],
+pub struct AllocatedSignedPrice<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize> {
+    pub signed_data_packages: [AllocatedSignedDataPackage<E>; NUM_SIGNATURES_TO_VERIFY],
     pub guardians: [Address<E>; NUM_SIGNATURES_TO_VERIFY],
 }
 
 impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize>
-    CircuitSignedPrice<E, NUM_SIGNATURES_TO_VERIFY>
+    AllocatedSignedPrice<E, NUM_SIGNATURES_TO_VERIFY>
 {
     pub fn from_witness<CS: ConstraintSystem<E>>(
         &self,
@@ -32,7 +32,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize>
         let mut guardians = vec![];
         for (data_package, signature, guardian) in witness.into_iter() {
             let signed_package_data =
-                CircuitSignedDataPackage::from_witness(cs, data_package, signature);
+                AllocatedSignedDataPackage::from_witness(cs, data_package, signature);
             let guardian = Address::<E>::from_address_wtiness(cs, &guardian)?;
             signed_data_packages.push(signed_package_data?);
             guardians.push(guardian);
@@ -63,12 +63,12 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize>
 }
 
 #[derive(Clone, Debug, Copy)]
-pub struct CircuitDataPoint<E: Engine> {
+pub struct AllocatedDataPoint<E: Engine> {
     pub data_feed_id: [Byte<E>; 32],
     pub value: [Byte<E>; super::DEFAULT_NUM_VALUE_BS],
 }
 
-impl<E: Engine> CircuitDataPoint<E> {
+impl<E: Engine> AllocatedDataPoint<E> {
     pub fn from_witness<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         witness: DataPoint,
@@ -97,18 +97,18 @@ impl<E: Engine> CircuitDataPoint<E> {
 }
 
 #[derive(Clone, Debug)]
-pub struct CircuitSignedDataPackage<E: Engine> {
-    pub data_package: CircuitDataPackage<E>,
+pub struct AllocatedSignedDataPackage<E: Engine> {
+    pub data_package: AllocatedDataPackage<E>,
     pub signature: Signature<E>,
 }
 
-impl<E: Engine> CircuitSignedDataPackage<E> {
+impl<E: Engine> AllocatedSignedDataPackage<E> {
     pub fn from_witness<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         data_package: DataPackage,
         signature: [u8; 65],
     ) -> Result<Self, SynthesisError> {
-        let data_package = CircuitDataPackage::from_witness(cs, data_package)?;
+        let data_package = AllocatedDataPackage::from_witness(cs, data_package)?;
         let mut signature = signature.clone();
         if signature[64] >= 27 {
             signature[64] -= 27;
@@ -157,14 +157,14 @@ impl<E: Engine> CircuitSignedDataPackage<E> {
 }
 
 #[derive(Clone, Debug)]
-pub struct CircuitDataPackage<E: Engine> {
-    pub data_points: Vec<CircuitDataPoint<E>>,
+pub struct AllocatedDataPackage<E: Engine> {
+    pub data_points: Vec<AllocatedDataPoint<E>>,
     pub timestamp: [Byte<E>; super::TIMESTAMP_BS],
     pub data_points_count: [Byte<E>; super::DATA_POINTS_COUNT_BS],
     pub default_data_point_value_byte_size: [Byte<E>; super::DATA_POINT_VALUE_BYTE_SIZE_BS],
 }
 
-impl<E: Engine> CircuitDataPackage<E> {
+impl<E: Engine> AllocatedDataPackage<E> {
     pub fn from_witness<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         witness: DataPackage,
@@ -188,7 +188,7 @@ impl<E: Engine> CircuitDataPackage<E> {
         let data_points = witness.sorted_data_points();
         let data_points = data_points
             .into_iter()
-            .map(|data_point| CircuitDataPoint::from_witness(cs, data_point))
+            .map(|data_point| AllocatedDataPoint::from_witness(cs, data_point))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             data_points,
@@ -229,7 +229,7 @@ mod tests {
         utils::testing::{bytes_assert_eq, create_test_constraint_system},
     };
 
-    use super::CircuitDataPackage;
+    use super::AllocatedDataPackage;
 
     #[test]
     fn test_serialize_and_hash() -> Result<(), SynthesisError> {
@@ -241,9 +241,9 @@ mod tests {
             1654353400000u64,
         );
         let cs = &mut create_test_constraint_system()?;
-        let circuit_data_package = CircuitDataPackage::from_witness(cs, data_package)
+        let allocated_data_package = AllocatedDataPackage::from_witness(cs, data_package)
             .expect("should create circuit data package");
-        let hash = circuit_data_package.keccak256_hash(cs)?;
+        let hash = allocated_data_package.keccak256_hash(cs)?;
         bytes_assert_eq(
             &hash,
             "e27cdb508629d3bbbb93739f48f282e89374eb5ea105cf519abd68a249cc2070",
@@ -269,13 +269,13 @@ mod tests {
             1705311690000,
         );
 
-        let circuit_signed_data_package = super::CircuitSignedDataPackage::from_witness(
+        let allocated_signed_data_package = super::AllocatedSignedDataPackage::from_witness(
             cs,
             data_package,
             signature.try_into().unwrap(),
         )?;
 
-        let is_valid = circuit_signed_data_package.check_by_address(cs, &address)?;
+        let is_valid = allocated_signed_data_package.check_by_address(cs, &address)?;
         assert!(is_valid.get_value().unwrap());
 
         Ok(())

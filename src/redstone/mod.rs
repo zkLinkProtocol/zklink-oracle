@@ -36,10 +36,10 @@ use crate::{
     utils, PublicInputData,
 };
 
-use self::{circuit::AllocatedSignedPrice, types::DataPackage};
+use self::{circuit::AllocatedSignedPrice, witness::DataPackage};
 
 pub mod circuit;
-pub mod types;
+pub mod witness;
 
 // Number of bytes reserved to store timestamp
 pub const TIMESTAMP_BS: usize = 6;
@@ -330,10 +330,10 @@ mod tests {
         testing::create_test_artifacts_with_optimized_gate,
     };
 
-    use super::types::{DataPackage, DataPoint};
+    use super::witness::{DataPackage, DataPoint};
 
     #[test]
-    fn test_price_oracle() -> anyhow::Result<()> {
+    fn test_circuit() -> anyhow::Result<()> {
         let data_package = DataPackage::new(
             vec![DataPoint::new("AVAX", "36.2488073814028")],
             1705311690000,
@@ -348,9 +348,9 @@ mod tests {
             .try_into()
             .unwrap()];
 
-        let price_oracle = super::PriceOracle::<Bn256, 1, 1>::new(signed_prices_batch, guardians)?;
+        let circuit = super::PriceOracle::<Bn256, 1, 1>::new(signed_prices_batch, guardians)?;
         let (mut cs, _, _) = create_test_artifacts_with_optimized_gate();
-        price_oracle.synthesize(&mut cs)?;
+        circuit.synthesize(&mut cs)?;
         println!("gate: {}", cs.n());
         Ok(())
     }

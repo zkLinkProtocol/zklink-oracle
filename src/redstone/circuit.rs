@@ -12,7 +12,7 @@ use sync_vm::{
 use crate::gadgets::{ecdsa::Signature, ethereum::Address};
 use std::convert::TryInto;
 
-use super::types::{DataPackage, DataPoint};
+use super::witness::{DataPackage, DataPoint};
 
 #[derive(Clone, Debug, Copy)]
 pub struct AllocatedDataPoint<E: Engine> {
@@ -226,7 +226,7 @@ mod tests {
 
     use crate::{
         gadgets::ethereum::Address,
-        redstone::types::{DataPackage, DataPoint},
+        redstone::witness::{DataPackage, DataPoint},
         utils::testing::{bytes_assert_eq, create_test_constraint_system},
     };
 

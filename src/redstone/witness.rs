@@ -139,7 +139,7 @@ pub fn convert_number_to_bytes<T: ToString, const N: usize>(number: T, decimals:
 
 #[cfg(test)]
 mod tests {
-    use crate::redstone::types::{
+    use crate::redstone::witness::{
         convert_number_to_bytes32, convert_string_to_bytes32, DataPackage, DataPoint,
     };
 

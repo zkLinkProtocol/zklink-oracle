@@ -23,7 +23,12 @@ anyhow = "1.0.76"
 serde = { version = "1.0.194", features = ["derive"] }
 bigdecimal = "0.4.2"
 k256 = { version = "0.13.3", features = ["arithmetic", "ecdsa"] }
-secp256k1 = { version = "0.28.1", features = ["hashes", "rand-std", "global-context", "recovery"] }
+secp256k1 = { version = "0.28.1", features = [
+  "hashes",
+  "rand-std",
+  "global-context",
+  "recovery",
+] }
 
 
 # For local test

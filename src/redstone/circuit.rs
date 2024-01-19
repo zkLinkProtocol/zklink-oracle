@@ -6,61 +6,13 @@ use sync_vm::{
         plonk::circuit::boolean::Boolean,
     },
     traits::CSAllocatable,
-    vm::primitives::uint256::UInt256,
+    vm::primitives::{uint256::UInt256, UInt64},
 };
 
 use crate::gadgets::{ecdsa::Signature, ethereum::Address};
 use std::convert::TryInto;
 
 use super::types::{DataPackage, DataPoint};
-
-#[derive(Debug, Clone)]
-pub struct AllocatedSignedPrice<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize> {
-    pub signed_data_packages: [AllocatedSignedDataPackage<E>; NUM_SIGNATURES_TO_VERIFY],
-    pub guardians: [Address<E>; NUM_SIGNATURES_TO_VERIFY],
-}
-
-impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize>
-    AllocatedSignedPrice<E, NUM_SIGNATURES_TO_VERIFY>
-{
-    pub fn from_witness<CS: ConstraintSystem<E>>(
-        &self,
-        cs: &mut CS,
-        witness: [(DataPackage, [u8; 65], [u8; 20]); NUM_SIGNATURES_TO_VERIFY],
-    ) -> Result<Self, SynthesisError> {
-        let mut signed_data_packages = vec![];
-        let mut guardians = vec![];
-        for (data_package, signature, guardian) in witness.into_iter() {
-            let signed_package_data =
-                AllocatedSignedDataPackage::from_witness(cs, data_package, signature);
-            let guardian = Address::<E>::from_address_wtiness(cs, &guardian)?;
-            signed_data_packages.push(signed_package_data?);
-            guardians.push(guardian);
-        }
-        let signed_data_packages: [_; NUM_SIGNATURES_TO_VERIFY] =
-            signed_data_packages.try_into().unwrap();
-        let guardians = guardians.try_into().unwrap();
-
-        Ok(Self {
-            signed_data_packages,
-            guardians,
-        })
-    }
-
-    pub fn check_by_addresses<CS: ConstraintSystem<E>>(
-        &self,
-        cs: &mut CS,
-    ) -> Result<Boolean, SynthesisError> {
-        let mut is_valid = Boolean::constant(true);
-
-        for i in 0..NUM_SIGNATURES_TO_VERIFY {
-            let current_is_valid =
-                self.signed_data_packages[i].check_by_address(cs, &self.guardians[i])?;
-            is_valid = Boolean::and(cs, &is_valid, &current_is_valid)?;
-        }
-        Ok(is_valid)
-    }
-}
 
 #[derive(Clone, Debug, Copy)]
 pub struct AllocatedDataPoint<E: Engine> {
@@ -93,6 +45,55 @@ impl<E: Engine> AllocatedDataPoint<E> {
         bytes.extend(self.data_feed_id);
         bytes.extend(self.value);
         Ok(bytes)
+    }
+}
+
+pub struct AllocatedSignedPrice<E: Engine, const NUM_SIGNATURES: usize> {
+    pub signed_data_packages: [AllocatedSignedDataPackage<E>; NUM_SIGNATURES],
+}
+
+impl<E: Engine, const NUM_SIGNATURES: usize> AllocatedSignedPrice<E, NUM_SIGNATURES> {
+    pub fn from_witness<CS: ConstraintSystem<E>>(
+        cs: &mut CS,
+        witness: [(DataPackage, [u8; 65]); NUM_SIGNATURES],
+    ) -> Result<Self, SynthesisError> {
+        let mut signed_data_packages = vec![];
+        for (data_package, signature) in witness.into_iter() {
+            let signed_package_data =
+                AllocatedSignedDataPackage::from_witness(cs, data_package, signature);
+            signed_data_packages.push(signed_package_data?);
+        }
+
+        Ok(Self {
+            signed_data_packages: signed_data_packages.try_into().unwrap(),
+        })
+    }
+
+    pub fn check_by_addresses<CS: ConstraintSystem<E>>(
+        &self,
+        cs: &mut CS,
+        guardians: &[Address<E>],
+    ) -> Result<Boolean, SynthesisError> {
+        let mut is_valid = Boolean::constant(true);
+
+        for i in 0..NUM_SIGNATURES {
+            let current_is_valid =
+                self.signed_data_packages[i].check_by_address(cs, &guardians[i])?;
+            is_valid = Boolean::and(cs, &is_valid, &current_is_valid)?;
+        }
+        Ok(is_valid)
+    }
+
+    pub fn timestamp(&self) -> [Byte<E>; super::TIMESTAMP_BS] {
+        self.signed_data_packages[0].data_package.timestamp
+    }
+
+    pub fn price(&self) -> [Byte<E>; super::DEFAULT_NUM_VALUE_BS] {
+        self.signed_data_packages[0].data_package.data_points[0].value
+    }
+
+    pub fn feed_id(&self) -> [Byte<E>; 32] {
+        self.signed_data_packages[0].data_package.data_points[0].data_feed_id
     }
 }
 

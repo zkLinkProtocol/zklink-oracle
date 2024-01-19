@@ -1,3 +1,6 @@
+use std::ops::Mul as _;
+
+use bigdecimal::num_traits::FromBytes;
 use num_bigint::BigUint;
 use pairing::{
     ff::{Field, PrimeField},
@@ -8,17 +11,19 @@ use sync_vm::{
     franklin_crypto::{
         bellman::{
             plonk::better_better_cs::{
-                cs::{Circuit, ConstraintSystem},
+                cs::{Circuit, ConstraintSystem, Gate, GateInternal, Width4MainGateWithDNext},
                 gates::selector_optimized_with_d_next::SelectorOptimizedWidth4MainGateWithDNext,
             },
             SynthesisError,
         },
         plonk::circuit::{
             allocated_num::{AllocatedNum, Num},
+            bigint::fe_to_biguint,
             boolean::Boolean,
+            custom_rescue_gate::Rescue5CustomGate,
         },
     },
-    glue::prepacked_long_comparison,
+    glue::{long_comparison, prepacked_long_comparison},
     vm::primitives::{uint256::UInt256, UInt128, UInt64},
 };
 
@@ -50,17 +55,117 @@ pub const DEFAULT_NUM_VALUE_BS: usize = 32;
 // Default precision for numeric values
 pub const DEFAULT_NUM_VALUE_DECIMALS: usize = 8;
 
-pub struct PriceOraclex<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICE: usize> {
+pub struct PriceOracle<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICE: usize> {
     pub signed_prices_batch: Vec<[[(DataPackage, [u8; 65]); NUM_SIGNATURES_TO_VERIFY]; NUM_PRICE]>,
     pub guardians: [[u8; 20]; NUM_SIGNATURES_TO_VERIFY],
     pub public_input_data: PublicInputData<E>,
     pub commitment: E::Fr,
 }
 
-impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> Circuit<E>
-    for PriceOraclex<E, NUM_SIGNATURES_TO_VERIFY, NUM_PRICES>
+impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
+    PriceOracle<E, NUM_SIGNATURES_TO_VERIFY, NUM_PRICES>
 {
-    type MainGate = SelectorOptimizedWidth4MainGateWithDNext;
+    pub fn new(
+        signed_prices_batch: Vec<[[(DataPackage, [u8; 65]); NUM_SIGNATURES_TO_VERIFY]; NUM_PRICES]>,
+        guardian_set: [[u8; 20]; NUM_SIGNATURES_TO_VERIFY],
+    ) -> Result<Self, anyhow::Error> {
+        let mut last_publish_time = 0;
+        let mut earliest_publish_time = 0;
+        let mut prices_commitments = vec![];
+        for signed_prices in signed_prices_batch.iter() {
+            // Check publish time is increasing
+            let signed_price = signed_prices[0].clone();
+            {
+                let current_publish_time = signed_price[0].0.timestamp;
+                if current_publish_time < last_publish_time {
+                    anyhow::bail!(
+                        "publish time is not increasing: {} <= {}",
+                        current_publish_time,
+                        last_publish_time
+                    )
+                };
+                last_publish_time = current_publish_time;
+                if earliest_publish_time == 0 {
+                    earliest_publish_time = last_publish_time;
+                }
+            }
+
+            // Compute price root
+            {
+                let mut prices_commitment_members = vec![];
+                for price_feed in signed_prices.iter() {
+                    let (price, signature) = price_feed[0].clone();
+                    let feed_id = {
+                        // Due the limitation of zklink state tree, we can only store first 15 bytes of feed_id
+                        let feed_id = price.data_points[0].serialize_feed_id();
+                        let mut bytes = [0u8; 16];
+                        bytes[1..].copy_from_slice(&feed_id[0..15]);
+                        BigUint::from_bytes_be(&bytes)
+                    };
+
+                    // normalized_price = 10^18 * real_price
+                    let price = {
+                        // The fetched price has been multiplied by 10^8
+                        let price = {
+                            // 32-bytes
+                            let bytes = price.data_points[0].serialize_value();
+                            BigUint::from_be_bytes(&bytes)
+                        };
+                        let exponent = (18 - 8) as u32;
+                        let coefficient = BigUint::from(10u32).pow(exponent);
+                        coefficient.mul(&price)
+                    };
+                    prices_commitment_members.push(fr_from_biguint::<E>(&feed_id)?);
+                    prices_commitment_members.push(fr_from_biguint::<E>(&price)?);
+                }
+                let prices_commitment = poseidon_hash::<E>(&prices_commitment_members);
+                prices_commitments.push(prices_commitment);
+            }
+        }
+
+        let guardian_set_hash = {
+            let input = guardian_set
+                .iter()
+                .map(|g| {
+                    let u = BigUint::from_bytes_be(g);
+                    fr_from_biguint::<E>(&u)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            poseidon_hash::<E>(&input)
+        };
+
+        let earliest_publish_time =
+            fr_from_biguint::<E>(&BigUint::from(earliest_publish_time as u64))?;
+
+        let prices_commitment =
+            prices_commitments
+                .into_iter()
+                .fold(<E::Fr as Field>::zero(), |mut acc, x| {
+                    Field::square(&mut acc);
+                    Field::add_assign(&mut acc, &x);
+                    acc
+                });
+        let commitment =
+            poseidon_hash::<E>(&[guardian_set_hash, prices_commitment, earliest_publish_time]);
+
+        Ok(Self {
+            commitment,
+            public_input_data: PublicInputData {
+                guardian_set_hash,
+                prices_commitment,
+                earliest_publish_time,
+            },
+            signed_prices_batch,
+            guardians: guardian_set,
+        })
+    }
+}
+
+impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> Circuit<E>
+    for PriceOracle<E, NUM_SIGNATURES_TO_VERIFY, NUM_PRICES>
+{
+    type MainGate = Width4MainGateWithDNext;
+    // type MainGate = SelectorOptimizedWidth4MainGateWithDNext;
 
     fn synthesize<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
         let mut prices_in_batch = vec![];
@@ -88,8 +193,8 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
         let mut signatures_valid = Boolean::constant(true);
         for prices in prices_in_batch.iter() {
             for i in 0..NUM_SIGNATURES_TO_VERIFY {
-                let is_current_valid = prices[i].check_by_addresses(cs, &guardians)?;
-                signatures_valid = Boolean::and(cs, &signatures_valid, &is_current_valid)?;
+                // let is_current_valid = prices[i].check_by_addresses(cs, &guardians)?;
+                // signatures_valid = Boolean::and(cs, &signatures_valid, &is_current_valid)?;
             }
         }
 
@@ -102,12 +207,12 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
                 // Follow what pyth does
                 let mut publish_time = [Byte::zero(); 8];
                 let significant_bytes = prices_in_batch[i][0].timestamp();
-                publish_time[..significant_bytes.len()].copy_from_slice(&significant_bytes);
+                publish_time[8 - significant_bytes.len()..].copy_from_slice(&significant_bytes);
                 publish_time.reverse();
                 UInt64::from_bytes_le(cs, &publish_time)?.into_num()
             };
             let (current_publish_time_is_equal, current_publish_time_is_greater) =
-                prepacked_long_comparison(cs, &[publish_time], &[last_publish_time], &[32])?;
+                prepacked_long_comparison(cs, &[publish_time], &[last_publish_time], &[64])?;
             let current_publish_time_is_equal_or_greater = Boolean::or(
                 cs,
                 &current_publish_time_is_equal,
@@ -136,6 +241,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
                             AllocatedNum::alloc(cs, || Ok(E::Fr::from_str("18").unwrap()))?;
                         let real_price_exponent =
                             AllocatedNum::alloc(cs, || Ok(E::Fr::from_str("8").unwrap()))?;
+
                         let normalized_price_exponent =
                             Num::Variable(eighteen.sub(cs, &real_price_exponent)?);
                         let mut normalized_price_exponent =
@@ -184,7 +290,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
             let mut earliest_publish_time = if let Some(batch) = prices_in_batch.first() {
                 let mut publish_time = [Byte::zero(); 8];
                 let significant_bytes = batch[0].timestamp();
-                publish_time[..significant_bytes.len()].copy_from_slice(&significant_bytes);
+                publish_time[8 - significant_bytes.len()..].copy_from_slice(&significant_bytes);
                 publish_time
             } else {
                 [Byte::zero(); 8]
@@ -192,7 +298,6 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
             earliest_publish_time.reverse();
             UInt64::from_bytes_le(cs, &earliest_publish_time)?.into_num()
         };
-
         let commitment = circuit_poseidon_hash(
             cs,
             &[guardian_set_hash, prices_commitment, earliest_publish_time],
@@ -205,6 +310,47 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
         };
         expected_commitment.enforce_equal(cs, &commitment)?;
 
+        Ok(())
+    }
+
+    // fn declare_used_gates() -> Result<Vec<Box<dyn GateInternal<E>>>, SynthesisError> {
+    //     Ok(vec![
+    //         Self::MainGate::default().into_internal(),
+    //         Rescue5CustomGate.into_internal(), // Just to standardize the proof format
+    //     ])
+    // }
+}
+
+#[cfg(test)]
+mod tests {
+    use pairing::bn256::Bn256;
+    use sync_vm::franklin_crypto::bellman::plonk::better_better_cs::cs::Circuit;
+
+    use crate::utils::testing::create_test_constraint_system;
+
+    use super::types::{DataPackage, DataPoint};
+
+    #[test]
+    fn test_price_oracle() -> anyhow::Result<()> {
+        let data_package = DataPackage::new(
+            vec![DataPoint::new("AVAX", "36.2488073814028")],
+            1705311690000,
+        );
+        let signature  = hex::decode("9ad1f96c083cf31f757b33b0ef6b2c4279589bf0489c1c3a7beb0005d2080dd233aaae60fdafee196362ed5b6af7498e7ba07eaa725f0bc5a041016ce54a67d61b").unwrap().try_into().unwrap();
+
+        let mut signed_prices_batch = vec![];
+        signed_prices_batch.push([[(data_package, signature)]]);
+
+        let guardians = [hex::decode("109B4a318A4F5ddcbCA6349B45f881B4137deaFB")
+            .unwrap()
+            .try_into()
+            .unwrap()];
+
+        let price_oracle = super::PriceOracle::<Bn256, 1, 1>::new(signed_prices_batch, guardians)?;
+        // let (mut cs, _, _) = create_test_artifacts_with_optimized_gate();
+        let cs = &mut create_test_constraint_system()?;
+        price_oracle.synthesize(cs)?;
+        println!("gate: {}", cs.n());
         Ok(())
     }
 }

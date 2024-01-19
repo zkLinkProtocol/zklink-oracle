@@ -6,7 +6,7 @@ use sync_vm::{
         plonk::circuit::boolean::Boolean,
     },
     traits::CSAllocatable,
-    vm::primitives::{uint256::UInt256, UInt64},
+    vm::primitives::uint256::UInt256,
 };
 
 use crate::gadgets::{ecdsa::Signature, ethereum::Address};

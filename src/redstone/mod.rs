@@ -11,19 +11,18 @@ use sync_vm::{
     franklin_crypto::{
         bellman::{
             plonk::better_better_cs::{
-                cs::{Circuit, ConstraintSystem, Gate, GateInternal, Width4MainGateWithDNext},
+                cs::{Circuit, ConstraintSystem, Gate, GateInternal},
                 gates::selector_optimized_with_d_next::SelectorOptimizedWidth4MainGateWithDNext,
             },
             SynthesisError,
         },
         plonk::circuit::{
             allocated_num::{AllocatedNum, Num},
-            bigint::fe_to_biguint,
             boolean::Boolean,
             custom_rescue_gate::Rescue5CustomGate,
         },
     },
-    glue::{long_comparison, prepacked_long_comparison},
+    glue::prepacked_long_comparison,
     vm::primitives::{uint256::UInt256, UInt128, UInt64},
 };
 
@@ -32,14 +31,12 @@ use crate::{
     gadgets::{
         ethereum::Address,
         poseidon::{circuit_poseidon_hash, poseidon_hash},
+        rescue::circuit_rescue_hash,
     },
-    PublicInputData,
+    utils, PublicInputData,
 };
 
-use self::{
-    circuit::{AllocatedSignedDataPackage, AllocatedSignedPrice},
-    types::DataPackage,
-};
+use self::{circuit::AllocatedSignedPrice, types::DataPackage};
 
 pub mod circuit;
 pub mod types;
@@ -94,7 +91,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
             {
                 let mut prices_commitment_members = vec![];
                 for price_feed in signed_prices.iter() {
-                    let (price, signature) = price_feed[0].clone();
+                    let (price, _) = price_feed[0].clone();
                     let feed_id = {
                         // Due the limitation of zklink state tree, we can only store first 15 bytes of feed_id
                         let feed_id = price.data_points[0].serialize_feed_id();
@@ -164,10 +161,14 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
 impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> Circuit<E>
     for PriceOracle<E, NUM_SIGNATURES_TO_VERIFY, NUM_PRICES>
 {
-    type MainGate = Width4MainGateWithDNext;
-    // type MainGate = SelectorOptimizedWidth4MainGateWithDNext;
+    // type MainGate = Width4MainGateWithDNext;
+    type MainGate = SelectorOptimizedWidth4MainGateWithDNext;
 
     fn synthesize<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
+        utils::add_bitwise_logic_and_range_table(cs)?;
+        let temp_variable = Num::alloc(cs, Some(E::Fr::one()))?;
+        circuit_rescue_hash(cs, &[temp_variable])?; // Just to standardize the proof format
+
         let mut prices_in_batch = vec![];
         let num_prices_batch = self.signed_prices_batch.len();
         for i in 0..num_prices_batch {
@@ -193,8 +194,8 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
         let mut signatures_valid = Boolean::constant(true);
         for prices in prices_in_batch.iter() {
             for i in 0..NUM_SIGNATURES_TO_VERIFY {
-                // let is_current_valid = prices[i].check_by_addresses(cs, &guardians)?;
-                // signatures_valid = Boolean::and(cs, &signatures_valid, &is_current_valid)?;
+                let is_current_valid = prices[i].check_by_addresses(cs, &guardians)?;
+                signatures_valid = Boolean::and(cs, &signatures_valid, &is_current_valid)?;
             }
         }
 
@@ -313,20 +314,21 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
         Ok(())
     }
 
-    // fn declare_used_gates() -> Result<Vec<Box<dyn GateInternal<E>>>, SynthesisError> {
-    //     Ok(vec![
-    //         Self::MainGate::default().into_internal(),
-    //         Rescue5CustomGate.into_internal(), // Just to standardize the proof format
-    //     ])
-    // }
+    fn declare_used_gates() -> Result<Vec<Box<dyn GateInternal<E>>>, SynthesisError> {
+        Ok(vec![
+            Self::MainGate::default().into_internal(),
+            Rescue5CustomGate.into_internal(), // Just to standardize the proof format
+        ])
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use pairing::bn256::Bn256;
-    use sync_vm::franklin_crypto::bellman::plonk::better_better_cs::cs::Circuit;
-
-    use crate::utils::testing::create_test_constraint_system;
+    use sync_vm::{
+        franklin_crypto::bellman::plonk::better_better_cs::cs::Circuit,
+        testing::create_test_artifacts_with_optimized_gate,
+    };
 
     use super::types::{DataPackage, DataPoint};
 
@@ -347,9 +349,8 @@ mod tests {
             .unwrap()];
 
         let price_oracle = super::PriceOracle::<Bn256, 1, 1>::new(signed_prices_batch, guardians)?;
-        // let (mut cs, _, _) = create_test_artifacts_with_optimized_gate();
-        let cs = &mut create_test_constraint_system()?;
-        price_oracle.synthesize(cs)?;
+        let (mut cs, _, _) = create_test_artifacts_with_optimized_gate();
+        price_oracle.synthesize(&mut cs)?;
         println!("gate: {}", cs.n());
         Ok(())
     }

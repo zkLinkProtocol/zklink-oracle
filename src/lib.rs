@@ -52,6 +52,8 @@ use crate::gadgets::rescue::circuit_rescue_hash;
 pub use advanced_circuit_component::franklin_crypto;
 use crate::franklin_crypto::bellman::plonk::better_better_cs::gates::selector_optimized_with_d_next::SelectorOptimizedWidth4MainGateWithDNext;
 
+pub const NUM_SIGNATURES_TO_VERIFY: usize = 12;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(bound = "")]
 pub struct ZkLinkOracle<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICE: usize> {

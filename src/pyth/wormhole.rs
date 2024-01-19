@@ -10,7 +10,7 @@ use advanced_circuit_component::{
         primitives::uint256::UInt256,
     },
 };
-use pairing::Engine;
+use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 
 use crate::{
     gadgets::{
@@ -325,7 +325,7 @@ mod tests {
         },
         vm::primitives::uint256::UInt256,
     };
-    use pairing::Engine;
+    use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 
     use crate::utils::{
         new_synthesis_error,

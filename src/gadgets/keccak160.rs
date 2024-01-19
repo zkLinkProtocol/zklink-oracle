@@ -8,7 +8,7 @@ use advanced_circuit_component::{
     },
     glue::prepacked_long_comparison,
 };
-use pairing::Engine;
+use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 
 use crate::utils::{new_synthesis_error, num_from_be_bytes};
 
@@ -157,7 +157,7 @@ mod tests {
             plonk::circuit::boolean::Boolean,
         },
     };
-    use pairing::Engine;
+    use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 
     #[test]
     fn test_keccak160() -> Result<(), SynthesisError> {

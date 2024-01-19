@@ -5,7 +5,7 @@ use advanced_circuit_component::{
     },
     rescue_poseidon::{CircuitGenericSponge, GenericSponge, PoseidonParams},
 };
-use pairing::Engine;
+use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 const WIDTH: usize = 3;
 const RATE: usize = 2;
 

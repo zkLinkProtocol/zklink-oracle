@@ -4,7 +4,7 @@ use crate::franklin_crypto::plonk::circuit::allocated_num::Num;
 use advanced_circuit_component::rescue_poseidon::{
     CircuitGenericSponge, CustomGate, HashParams, RescueParams,
 };
-use pairing::Engine;
+use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 
 pub fn circuit_rescue_hash<E: Engine, CS: ConstraintSystem<E>>(
     cs: &mut CS,

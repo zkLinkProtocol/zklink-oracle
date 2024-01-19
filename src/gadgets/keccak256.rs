@@ -9,7 +9,7 @@ use advanced_circuit_component::{
     },
     scheduler::block_header::keccak_output_into_bytes,
 };
-use pairing::Engine;
+use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 
 // cost about 26000 gates for each block
 pub fn digest<E: Engine, CS: ConstraintSystem<E>>(

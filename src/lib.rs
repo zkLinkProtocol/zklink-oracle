@@ -17,7 +17,7 @@ use advanced_circuit_component::{
 };
 use base64::Engine as _;
 use num_bigint::BigUint;
-use pairing::{
+use advanced_circuit_component::franklin_crypto::bellman::pairing::{
     ff::{Field, PrimeField},
     Engine,
 };
@@ -462,7 +462,7 @@ mod tests {
     use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::cs::Circuit;
     use advanced_circuit_component::testing::create_test_artifacts_with_optimized_gate;
     use base64::Engine as _;
-    use pairing::bn256::Bn256;
+    use advanced_circuit_component::franklin_crypto::bellman::pairing::bn256::Bn256;
     use pythnet_sdk::wire::v1::AccumulatorUpdateData;
 
     #[test]

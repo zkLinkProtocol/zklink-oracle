@@ -10,7 +10,7 @@ use advanced_circuit_component::{
 };
 use num::traits::{FromBytes, ToBytes};
 use num_bigint::BigUint;
-use pairing::Engine;
+use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 
 use crate::utils::{self, new_synthesis_error};
 

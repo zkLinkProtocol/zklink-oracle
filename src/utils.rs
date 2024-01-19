@@ -15,8 +15,8 @@ use advanced_circuit_component::{
     vm::primitives::uint256::UInt256,
 };
 use num_bigint::BigUint;
-use pairing::ff::{PrimeField, ScalarEngine};
-use pairing::Engine;
+use advanced_circuit_component::franklin_crypto::bellman::pairing::ff::{PrimeField, ScalarEngine};
+use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 use std::str::FromStr;
 
 pub fn new_synthesis_error<T: ToString>(msg: T) -> SynthesisError {
@@ -120,7 +120,7 @@ pub mod testing {
             SynthesisError,
         },
     };
-    use pairing::{bn256::Bn256, Engine};
+    use advanced_circuit_component::franklin_crypto::bellman::pairing::{bn256::Bn256, Engine};
 
     pub fn bytes_assert_eq<E: Engine, T: ToString>(bytes: &[Byte<E>], expected_hex: T) {
         let bytes = bytes

@@ -2037,7 +2037,6 @@ dependencies = [
  "hex",
  "num",
  "num-bigint 0.4.4",
- "pairing_ce",
  "pythnet-sdk",
  "secp256k1",
  "serde",

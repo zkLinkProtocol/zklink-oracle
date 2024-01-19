@@ -7,7 +7,7 @@ use advanced_circuit_component::{
     traits::CSAllocatable,
     vm::primitives::uint256::UInt256,
 };
-use pairing::Engine;
+use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 
 use crate::{
     gadgets::{
@@ -266,7 +266,7 @@ mod tests {
     use advanced_circuit_component::franklin_crypto::{
         bellman::SynthesisError, plonk::circuit::boolean::Boolean,
     };
-    use pairing::bn256::Bn256;
+    use advanced_circuit_component::franklin_crypto::bellman::pairing::bn256::Bn256;
     use pythnet_sdk::wire::from_slice;
 
     #[test]

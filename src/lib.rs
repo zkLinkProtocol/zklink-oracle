@@ -1,5 +1,9 @@
 use std::ops::Mul as _;
 
+use advanced_circuit_component::franklin_crypto::bellman::pairing::{
+    ff::{Field, PrimeField},
+    Engine,
+};
 use advanced_circuit_component::{
     circuit_structures::byte::Byte,
     franklin_crypto::{
@@ -17,10 +21,6 @@ use advanced_circuit_component::{
 };
 use base64::Engine as _;
 use num_bigint::BigUint;
-use advanced_circuit_component::franklin_crypto::bellman::pairing::{
-    ff::{Field, PrimeField},
-    Engine,
-};
 use pythnet_sdk::{
     messages::Message,
     wire::{from_slice, v1::AccumulatorUpdateData},
@@ -278,7 +278,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
         let guardian_set = self
             .guardian_set
             .iter()
-            .map(|w| Address::from_address_wtiness(cs, w))
+            .map(|w| Address::from_address_witness(cs, w))
             .collect::<Result<Vec<_>, _>>()?;
         let mut price_updates_batch = vec![];
         // Construct circuit variable from witness
@@ -462,10 +462,10 @@ pub fn max_vaa(power_of_tau: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::ZkLinkOracle;
+    use advanced_circuit_component::franklin_crypto::bellman::pairing::bn256::Bn256;
     use advanced_circuit_component::franklin_crypto::bellman::plonk::better_better_cs::cs::Circuit;
     use advanced_circuit_component::testing::create_test_artifacts_with_optimized_gate;
     use base64::Engine as _;
-    use advanced_circuit_component::franklin_crypto::bellman::pairing::bn256::Bn256;
     use pythnet_sdk::wire::v1::AccumulatorUpdateData;
 
     #[test]

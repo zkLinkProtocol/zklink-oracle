@@ -380,7 +380,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
                     UInt64::from_bytes_le(cs, &publish_time)?.into_num()
                 };
                 let (current_publish_time_is_equal, current_publish_time_is_greater) =
-                    prepacked_long_comparison(cs, &[publish_time], &[last_publish_time], &[32])?;
+                    prepacked_long_comparison(cs, &[publish_time], &[last_publish_time], &[8 * 8])?;
                 let current_publish_time_is_equal_or_greater = Boolean::or(
                     cs,
                     &current_publish_time_is_equal,

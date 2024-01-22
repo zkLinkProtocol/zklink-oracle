@@ -44,6 +44,7 @@ pub use pythnet_sdk;
 
 pub mod gadgets;
 pub mod pyth;
+pub mod redstone;
 pub mod utils;
 
 use crate::franklin_crypto::bellman::plonk::better_better_cs::cs::{Gate, GateInternal};

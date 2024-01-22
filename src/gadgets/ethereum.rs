@@ -15,6 +15,7 @@ use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 use crate::utils::{self, new_synthesis_error};
 
 /// Circuit representation of Ethereum address.
+#[derive(Debug, Clone)]
 pub struct Address<E: Engine>(UInt256<E>);
 
 impl<E: Engine> fmt::Display for Address<E> {

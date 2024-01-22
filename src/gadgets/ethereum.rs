@@ -70,7 +70,7 @@ impl<E: Engine> Address<E> {
         Self::from_bytes(cs, &hash)
     }
 
-    pub fn from_address_wtiness<CS: ConstraintSystem<E>>(
+    pub fn from_address_witness<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         witness: &[u8; 20],
     ) -> Result<Self, SynthesisError> {
@@ -93,7 +93,7 @@ impl<E: Engine> Address<E> {
             .finalize()
             .into();
         let address: [u8; 20] = address[address.len() - 20..].try_into().unwrap();
-        Self::from_address_wtiness(cs, &address)
+        Self::from_address_witness(cs, &address)
     }
 
     pub fn equals<CS: ConstraintSystem<E>>(
@@ -122,7 +122,7 @@ mod tests {
         let cs = &mut create_test_constraint_system()?;
         let addr1 = Address::from_pubkey_witness(cs,
             &hex::decode("042a953a2e8b1052eb70c1d7b556b087deed598b55608396686c1c811b9796c763078687ce10459f4f25fb7a0fbf8727bb0fb51e00820e93a123f652ee843cf08d").unwrap())?;
-        let addr2 = Address::from_address_wtiness(
+        let addr2 = Address::from_address_witness(
             cs,
             &hex::decode("58cc3ae5c097b213ce3c81979e1b9f9570746aa5")
                 .unwrap()
@@ -152,7 +152,7 @@ mod tests {
             .try_into()
             .unwrap();
         let addr1 = Address::from_pubkey(cs, &x, &y)?;
-        let addr2 = Address::from_address_wtiness(
+        let addr2 = Address::from_address_witness(
             cs,
             &hex::decode("58cc3ae5c097b213ce3c81979e1b9f9570746aa5")
                 .unwrap()

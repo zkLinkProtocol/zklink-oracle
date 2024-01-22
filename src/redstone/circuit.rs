@@ -1,5 +1,5 @@
-use pairing::Engine;
-use sync_vm::{
+use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
+use advanced_circuit_component::{
     circuit_structures::byte::{Byte, IntoBytes},
     franklin_crypto::{
         bellman::{plonk::better_better_cs::cs::ConstraintSystem, SynthesisError},
@@ -222,7 +222,7 @@ impl<E: Engine> AllocatedDataPackage<E> {
 
 #[cfg(test)]
 mod tests {
-    use sync_vm::franklin_crypto::bellman::SynthesisError;
+    use advanced_circuit_component::franklin_crypto::bellman::SynthesisError;
 
     use crate::{
         gadgets::ethereum::Address,
@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn test_check_by_address() -> Result<(), SynthesisError> {
         let cs = &mut create_test_constraint_system()?;
-        let address = Address::from_address_wtiness(
+        let address = Address::from_address_witness(
             cs,
             &hex::decode("109B4a318A4F5ddcbCA6349B45f881B4137deaFB")
                 .unwrap()

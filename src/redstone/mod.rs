@@ -33,7 +33,7 @@ use crate::{
         poseidon::{circuit_poseidon_hash, poseidon_hash},
         rescue::circuit_rescue_hash,
     },
-    utils, PublicInputData,
+    utils, PricesCommitment, PublicInputData,
 };
 
 use self::{circuit::AllocatedSignedPrice, witness::DataPackage};
@@ -134,22 +134,35 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
         let earliest_publish_time =
             fr_from_biguint::<E>(&BigUint::from(earliest_publish_time as u64))?;
 
-        let prices_commitment =
-            prices_commitments
-                .into_iter()
-                .fold(<E::Fr as Field>::zero(), |mut acc, x| {
-                    Field::square(&mut acc);
-                    Field::add_assign(&mut acc, &x);
-                    acc
-                });
-        let commitment =
-            poseidon_hash::<E>(&[guardian_set_hash, prices_commitment, earliest_publish_time]);
+        let mut prices_num = E::Fr::zero();
+        let mut prices_commitment_base_sum = E::Fr::zero();
+        let mut prices_commitment = E::Fr::zero();
+        for (i, commitment) in prices_commitments.into_iter().enumerate() {
+            Field::add_assign(&mut prices_commitment_base_sum, &commitment);
+            let mut commitment = commitment;
+            let coef = E::Fr::from_str(&format!("{}", i)).unwrap();
+            Field::mul_assign(&mut commitment, &coef);
+            Field::add_assign(&mut prices_commitment, &commitment);
+            Field::add_assign(&mut prices_num, &E::Fr::one());
+        }
+
+        let commitment = poseidon_hash::<E>(&[
+            guardian_set_hash,
+            prices_commitment,
+            earliest_publish_time,
+            prices_num,
+            prices_commitment_base_sum,
+        ]);
 
         Ok(Self {
             commitment,
             public_input_data: PublicInputData {
                 guardian_set_hash,
-                prices_commitment: todo!(),
+                prices_commitment: PricesCommitment {
+                    prices_commitment,
+                    prices_num,
+                    prices_commitment_base_sum,
+                },
                 earliest_publish_time,
             },
             signed_prices_batch,
@@ -265,13 +278,19 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
             prices_commitments.push(prices_commitment);
         }
 
-        let prices_commitment =
-            prices_commitments
-                .into_iter()
-                .try_fold(Num::<E>::zero(), |acc, x| {
-                    let square = acc.mul(cs, &acc)?;
-                    square.add(cs, &x)
-                })?;
+        Boolean::enforce_equal(cs, &is_publish_time_increasing, &Boolean::Constant(true))?;
+
+        let mut prices_num = 0;
+        let mut prices_commitment_base_sum = Num::zero();
+        let mut prices_commitment = Num::zero();
+        for (i, commitment) in prices_commitments.into_iter().enumerate() {
+            prices_commitment_base_sum = prices_commitment_base_sum.add(cs, &commitment)?;
+            let coef = E::Fr::from_str(&format!("{}", i)).unwrap();
+            let x = commitment.mul(cs, &Num::Constant(coef))?;
+            prices_commitment = prices_commitment.add(cs, &x)?;
+            prices_num += 1;
+        }
+
         let expected_prices_commitment = {
             let n = AllocatedNum::alloc(cs, || {
                 Ok(self.public_input_data.prices_commitment.prices_commitment)
@@ -280,7 +299,12 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
         };
         expected_prices_commitment.enforce_equal(cs, &prices_commitment)?;
 
-        Boolean::enforce_equal(cs, &is_publish_time_increasing, &Boolean::Constant(true))?;
+        let prices_num = {
+            let n = AllocatedNum::alloc_input(cs, || {
+                Ok(E::Fr::from_str(&format!("{}", prices_num)).unwrap())
+            })?;
+            Num::Variable(n)
+        };
 
         // Compute guardian set hash
         let guardian_set_num = guardians
@@ -303,7 +327,13 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
         };
         let commitment = circuit_poseidon_hash(
             cs,
-            &[guardian_set_hash, prices_commitment, earliest_publish_time],
+            &[
+                guardian_set_hash,
+                prices_commitment,
+                earliest_publish_time,
+                prices_num,
+                prices_commitment_base_sum,
+            ],
         )?;
 
         let expected_commitment = {

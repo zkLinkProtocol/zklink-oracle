@@ -1,12 +1,10 @@
 use std::ops::Mul as _;
 
-use bigdecimal::num_traits::FromBytes;
-use num_bigint::BigUint;
-use pairing::{
+use advanced_circuit_component::franklin_crypto::bellman::pairing::{
     ff::{Field, PrimeField},
     Engine,
 };
-use sync_vm::{
+use advanced_circuit_component::{
     circuit_structures::byte::Byte,
     franklin_crypto::{
         bellman::{
@@ -25,6 +23,8 @@ use sync_vm::{
     glue::prepacked_long_comparison,
     vm::primitives::{uint256::UInt256, UInt128, UInt64},
 };
+use bigdecimal::num_traits::FromBytes;
+use num_bigint::BigUint;
 
 use crate::{
     fr_from_biguint,

@@ -149,7 +149,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
             commitment,
             public_input_data: PublicInputData {
                 guardian_set_hash,
-                prices_commitment,
+                prices_commitment: todo!(),
                 earliest_publish_time,
             },
             signed_prices_batch,
@@ -273,7 +273,9 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
                     square.add(cs, &x)
                 })?;
         let expected_prices_commitment = {
-            let n = AllocatedNum::alloc(cs, || Ok(self.public_input_data.prices_commitment))?;
+            let n = AllocatedNum::alloc(cs, || {
+                Ok(self.public_input_data.prices_commitment.prices_commitment)
+            })?;
             Num::Variable(n)
         };
         expected_prices_commitment.enforce_equal(cs, &prices_commitment)?;

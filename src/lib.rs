@@ -176,23 +176,26 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
         let earliest_publish_time =
             fr_from_biguint::<E>(&BigUint::from(earliest_publish_time as u64))?;
 
-        let prices_commitment =
-            prices_commitments
-                .into_iter()
-                .fold(<E::Fr as Field>::zero(), |mut acc, x| {
-                    Field::square(&mut acc);
-                    Field::add_assign(&mut acc, &x);
-                    acc
-                });
-        let commitment =
-            poseidon_hash::<E>(&[guardian_set_hash, prices_commitment, earliest_publish_time]);
+        let mut final_prices_commitment = <E::Fr as Field>::zero();
+        for (i, commitment) in prices_commitments.into_iter().enumerate() {
+            let mut commitment = commitment;
+            let coef = E::Fr::from_str(&format!("{}", i)).unwrap();
+            Field::mul_assign(&mut commitment, &coef);
+            Field::add_assign(&mut final_prices_commitment, &commitment)
+        }
+
+        let commitment = poseidon_hash::<E>(&[
+            guardian_set_hash,
+            final_prices_commitment,
+            earliest_publish_time,
+        ]);
         Ok(Self {
             accumulator_update_data,
             guardian_set,
             commitment,
             public_input_data: PublicInputData {
                 guardian_set_hash,
-                prices_commitment,
+                prices_commitment: final_prices_commitment,
                 earliest_publish_time,
             },
         })
@@ -397,18 +400,18 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
             }
         }
 
-        let prices_commitment =
-            prices_commitments
-                .into_iter()
-                .try_fold(Num::<E>::zero(), |acc, x| {
-                    let square = acc.mul(cs, &acc)?;
-                    square.add(cs, &x)
-                })?;
+        let mut final_prices_commitment = Num::zero();
+        for (i, commitment) in prices_commitments.into_iter().enumerate() {
+            let coef = E::Fr::from_str(&format!("{}", i)).unwrap();
+            let x = commitment.mul(cs, &Num::Constant(coef))?;
+            final_prices_commitment = final_prices_commitment.add(cs, &x)?;
+        }
+
         let expected_prices_commitment = {
             let n = AllocatedNum::alloc(cs, || Ok(self.public_input_data.prices_commitment))?;
             Num::Variable(n)
         };
-        expected_prices_commitment.enforce_equal(cs, &prices_commitment)?;
+        expected_prices_commitment.enforce_equal(cs, &final_prices_commitment)?;
 
         Boolean::enforce_equal(cs, &is_publish_time_increasing, &Boolean::Constant(true))?;
 
@@ -430,7 +433,11 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
         };
         let commitment = circuit_poseidon_hash(
             cs,
-            &[guardian_set_hash, prices_commitment, earliest_publish_time],
+            &[
+                guardian_set_hash,
+                final_prices_commitment,
+                earliest_publish_time,
+            ],
         )?;
 
         let expected_commitment = {

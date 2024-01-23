@@ -325,8 +325,8 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
 #[cfg(test)]
 mod tests {
     use advanced_circuit_component::{
-        franklin_crypto::bellman::{compact_bn256::Bn256, plonk::better_better_cs::cs::Circuit},
-        testing::create_test_artifacts_with_optimized_gate,
+        franklin_crypto::bellman::plonk::better_better_cs::cs::Circuit,
+        testing::{create_test_artifacts_with_optimized_gate, Bn256},
     };
 
     use super::witness::{DataPackage, DataPoint};

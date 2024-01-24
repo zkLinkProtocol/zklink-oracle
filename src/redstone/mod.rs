@@ -1,12 +1,10 @@
 use std::ops::Mul as _;
 
-use bigdecimal::num_traits::FromBytes;
-use num_bigint::BigUint;
-use pairing::{
+use advanced_circuit_component::franklin_crypto::bellman::pairing::{
     ff::{Field, PrimeField},
     Engine,
 };
-use sync_vm::{
+use advanced_circuit_component::{
     circuit_structures::byte::Byte,
     franklin_crypto::{
         bellman::{
@@ -25,6 +23,8 @@ use sync_vm::{
     glue::prepacked_long_comparison,
     vm::primitives::{uint256::UInt256, UInt128, UInt64},
 };
+use bigdecimal::num_traits::FromBytes;
+use num_bigint::BigUint;
 
 use crate::{
     fr_from_biguint,
@@ -33,7 +33,7 @@ use crate::{
         poseidon::{circuit_poseidon_hash, poseidon_hash},
         rescue::circuit_rescue_hash,
     },
-    utils, PublicInputData,
+    utils, PricesCommitment, PublicInputData,
 };
 
 use self::{circuit::AllocatedSignedPrice, witness::DataPackage};
@@ -134,22 +134,33 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
         let earliest_publish_time =
             fr_from_biguint::<E>(&BigUint::from(earliest_publish_time as u64))?;
 
-        let prices_commitment =
-            prices_commitments
-                .into_iter()
-                .fold(<E::Fr as Field>::zero(), |mut acc, x| {
-                    Field::square(&mut acc);
-                    Field::add_assign(&mut acc, &x);
-                    acc
-                });
-        let commitment =
-            poseidon_hash::<E>(&[guardian_set_hash, prices_commitment, earliest_publish_time]);
+        let prices_num = E::Fr::from_str(&prices_commitments.len().to_string()).unwrap();
+        let mut prices_commitment_base_sum = E::Fr::zero();
+        let mut prices_commitment = E::Fr::zero();
+        for (i, mut commitment) in prices_commitments.into_iter().enumerate() {
+            Field::add_assign(&mut prices_commitment_base_sum, &commitment);
+            let coef = E::Fr::from_str(&format!("{}", i)).unwrap();
+            Field::mul_assign(&mut commitment, &coef);
+            Field::add_assign(&mut prices_commitment, &commitment);
+        }
+
+        let commitment = poseidon_hash::<E>(&[
+            guardian_set_hash,
+            prices_commitment,
+            earliest_publish_time,
+            prices_num,
+            prices_commitment_base_sum,
+        ]);
 
         Ok(Self {
             commitment,
             public_input_data: PublicInputData {
                 guardian_set_hash,
-                prices_commitment,
+                prices_commitment: PricesCommitment {
+                    prices_commitment,
+                    prices_num,
+                    prices_commitment_base_sum,
+                },
                 earliest_publish_time,
             },
             signed_prices_batch,
@@ -161,7 +172,6 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
 impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> Circuit<E>
     for PriceOracle<E, NUM_SIGNATURES_TO_VERIFY, NUM_PRICES>
 {
-    // type MainGate = Width4MainGateWithDNext;
     type MainGate = SelectorOptimizedWidth4MainGateWithDNext;
 
     fn synthesize<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
@@ -265,20 +275,21 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
             prices_commitments.push(prices_commitment);
         }
 
-        let prices_commitment =
-            prices_commitments
-                .into_iter()
-                .try_fold(Num::<E>::zero(), |acc, x| {
-                    let square = acc.mul(cs, &acc)?;
-                    square.add(cs, &x)
-                })?;
-        let expected_prices_commitment = {
-            let n = AllocatedNum::alloc(cs, || Ok(self.public_input_data.prices_commitment))?;
-            Num::Variable(n)
-        };
+        Boolean::enforce_equal(cs, &is_publish_time_increasing, &Boolean::Constant(true))?;
+
+        let mut prices_commitment_base_sum = Num::zero();
+        let mut prices_commitment = Num::zero();
+        for (i, commitment) in prices_commitments.into_iter().enumerate() {
+            prices_commitment_base_sum = prices_commitment_base_sum.add(cs, &commitment)?;
+            let coef = E::Fr::from_str(&format!("{}", i)).unwrap();
+            let x = commitment.mul(cs, &Num::Constant(coef))?;
+            prices_commitment = prices_commitment.add(cs, &x)?;
+        }
+
+        let expected_prices_commitment = Num::alloc(cs, Some(self.public_input_data.prices_commitment.prices_commitment))?;
         expected_prices_commitment.enforce_equal(cs, &prices_commitment)?;
 
-        Boolean::enforce_equal(cs, &is_publish_time_increasing, &Boolean::Constant(true))?;
+        let prices_num = Num::Constant(E::Fr::from_str(&prices_commitments.len().to_string()).unwrap());
 
         // Compute guardian set hash
         let guardian_set_num = guardians
@@ -301,15 +312,18 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
         };
         let commitment = circuit_poseidon_hash(
             cs,
-            &[guardian_set_hash, prices_commitment, earliest_publish_time],
+            &[
+                guardian_set_hash,
+                prices_commitment,
+                earliest_publish_time,
+                prices_num,
+                prices_commitment_base_sum,
+            ],
         )?;
 
-        let expected_commitment = {
-            // Make commitment public input
-            let n = AllocatedNum::alloc_input(cs, || Ok(self.commitment))?;
-            Num::Variable(n)
-        };
+        let expected_commitment = Num::alloc(cs, Some(self.commitment))?;
         expected_commitment.enforce_equal(cs, &commitment)?;
+        expected_commitment.get_variable().inputize(cs)?;
 
         Ok(())
     }
@@ -325,8 +339,8 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
 #[cfg(test)]
 mod tests {
     use advanced_circuit_component::{
-        franklin_crypto::bellman::{compact_bn256::Bn256, plonk::better_better_cs::cs::Circuit},
-        testing::create_test_artifacts_with_optimized_gate,
+        franklin_crypto::bellman::plonk::better_better_cs::cs::Circuit,
+        testing::{create_test_artifacts_with_optimized_gate, Bn256},
     };
 
     use super::witness::{DataPackage, DataPoint};

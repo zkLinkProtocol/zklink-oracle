@@ -443,12 +443,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
             expected_prices_commitment.enforce_equal(cs, &prices_commitment)?;
         }
 
-        let prices_num = {
-            let n = AllocatedNum::alloc(cs, || {
-                Ok(E::Fr::from_str(&format!("{}", prices_num)).unwrap())
-            })?;
-            Num::Variable(n)
-        };
+        let prices_num = Num::Constant(E::Fr::from_str(&format!("{}", prices_num)).unwrap());
 
         // Compute guardian set hash
         let guardian_set_num = guardian_set

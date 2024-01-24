@@ -180,10 +180,9 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
         let mut prices_num = E::Fr::zero();
         let mut prices_commitment_base_sum = E::Fr::zero();
         let mut prices_commitment = E::Fr::zero();
-        for (i, commitment) in prices_commitments.into_iter().enumerate() {
+        for (i, mut commitment) in prices_commitments.into_iter().enumerate() {
             Field::add_assign(&mut prices_commitment_base_sum, &commitment);
-            let mut commitment = commitment;
-            let coef = E::Fr::from_str(&format!("{}", i)).unwrap();
+            let coef = E::Fr::from_str(&i.to_string()).unwrap();
             Field::mul_assign(&mut commitment, &coef);
             Field::add_assign(&mut prices_commitment, &commitment);
             Field::add_assign(&mut prices_num, &E::Fr::one());
@@ -275,7 +274,7 @@ pub struct PublicInputData<E: Engine> {
 pub struct PricesCommitment<E: Engine> {
     pub prices_commitment: E::Fr,
     pub prices_num: E::Fr,
-    pub prices_commitment_base_sum: E::Fr, // public input
+    pub prices_commitment_base_sum: E::Fr,
 }
 
 fn fr_from_biguint<E: Engine>(biguint: &BigUint) -> Result<E::Fr, SynthesisError> {
@@ -422,7 +421,6 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
 
         Boolean::enforce_equal(cs, &is_publish_time_increasing, &Boolean::Constant(true))?;
 
-        let mut prices_num = 0;
         let mut prices_commitment_base_sum = Num::zero();
         let mut prices_commitment = Num::zero();
         for (i, commitment) in prices_commitments.into_iter().enumerate() {
@@ -430,20 +428,14 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
             let coef = E::Fr::from_str(&format!("{}", i)).unwrap();
             let x = commitment.mul(cs, &Num::Constant(coef))?;
             prices_commitment = prices_commitment.add(cs, &x)?;
-            prices_num += 1;
         }
 
         {
-            let expected_prices_commitment = {
-                let n = AllocatedNum::alloc(cs, || {
-                    Ok(self.public_input_data.prices_commitment.prices_commitment)
-                })?;
-                Num::Variable(n)
-            };
+            let expected_prices_commitment = Num::alloc(cs, Some(self.public_input_data.prices_commitment.prices_commitment))?;
             expected_prices_commitment.enforce_equal(cs, &prices_commitment)?;
         }
 
-        let prices_num = Num::Constant(E::Fr::from_str(&format!("{}", prices_num)).unwrap());
+        let prices_num = Num::Constant(E::Fr::from_str(&prices_commitments.len().to_string()).unwrap());
 
         // Compute guardian set hash
         let guardian_set_num = guardian_set
@@ -465,19 +457,17 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
             cs,
             &[
                 guardian_set_hash,
-                prices_commitment,
                 earliest_publish_time,
+                prices_commitment,
                 prices_num,
                 prices_commitment_base_sum,
             ],
         )?;
 
-        let expected_commitment = {
-            // Make commitment public input
-            let n = AllocatedNum::alloc_input(cs, || Ok(self.commitment))?;
-            Num::Variable(n)
-        };
+        let expected_commitment = Num::alloc(cs, Some(self.commitment))?;
         expected_commitment.enforce_equal(cs, &commitment)?;
+        expected_commitment.get_variable().inputize(cs)?;
+
         Ok(())
     }
 

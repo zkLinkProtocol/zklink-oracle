@@ -132,7 +132,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
         };
 
         let earliest_publish_time =
-            fr_from_biguint::<E>(&BigUint::from(earliest_publish_time as u64))?;
+            fr_from_biguint::<E>(&BigUint::from(earliest_publish_time))?;
 
         let prices_num = E::Fr::from_str(&prices_commitments.len().to_string()).unwrap();
         let mut prices_commitment_base_sum = E::Fr::zero();
@@ -279,6 +279,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
 
         let mut prices_commitment_base_sum = Num::zero();
         let mut prices_commitment = Num::zero();
+        let prices_num = prices_commitments.len();
         for (i, commitment) in prices_commitments.into_iter().enumerate() {
             prices_commitment_base_sum = prices_commitment_base_sum.add(cs, &commitment)?;
             let coef = E::Fr::from_str(&format!("{}", i)).unwrap();
@@ -289,7 +290,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
         let expected_prices_commitment = Num::alloc(cs, Some(self.public_input_data.prices_commitment.prices_commitment))?;
         expected_prices_commitment.enforce_equal(cs, &prices_commitment)?;
 
-        let prices_num = Num::Constant(E::Fr::from_str(&prices_commitments.len().to_string()).unwrap());
+        let prices_num = Num::Constant(E::Fr::from_str(&prices_num.to_string()).unwrap());
 
         // Compute guardian set hash
         let guardian_set_num = guardians

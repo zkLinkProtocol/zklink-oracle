@@ -423,6 +423,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
 
         let mut prices_commitment_base_sum = Num::zero();
         let mut prices_commitment = Num::zero();
+        let prices_num = prices_commitments.len();
         for (i, commitment) in prices_commitments.into_iter().enumerate() {
             prices_commitment_base_sum = prices_commitment_base_sum.add(cs, &commitment)?;
             let coef = E::Fr::from_str(&format!("{}", i)).unwrap();
@@ -435,7 +436,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
             expected_prices_commitment.enforce_equal(cs, &prices_commitment)?;
         }
 
-        let prices_num = Num::Constant(E::Fr::from_str(&prices_commitments.len().to_string()).unwrap());
+        let prices_num = Num::Constant(E::Fr::from_str(&prices_num.to_string()).unwrap());
 
         // Compute guardian set hash
         let guardian_set_num = guardian_set

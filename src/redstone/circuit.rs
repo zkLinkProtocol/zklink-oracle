@@ -110,7 +110,7 @@ impl<E: Engine> AllocatedSignedDataPackage<E> {
         signature: [u8; 65],
     ) -> Result<Self, SynthesisError> {
         let data_package = AllocatedDataPackage::from_witness(cs, data_package)?;
-        let mut signature = signature.clone();
+        let mut signature = signature;
         if signature[64] >= 27 {
             signature[64] -= 27;
         }

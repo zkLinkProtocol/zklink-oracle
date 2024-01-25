@@ -46,6 +46,7 @@ pub mod gadgets;
 pub mod pyth;
 pub mod redstone;
 pub mod utils;
+pub mod witness;
 
 use crate::franklin_crypto::bellman::plonk::better_better_cs::cs::{Gate, GateInternal};
 use crate::franklin_crypto::plonk::circuit::custom_rescue_gate::Rescue5CustomGate;
@@ -432,7 +433,10 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
         }
 
         {
-            let expected_prices_commitment = Num::alloc(cs, Some(self.public_input_data.prices_commitment.prices_commitment))?;
+            let expected_prices_commitment = Num::alloc(
+                cs,
+                Some(self.public_input_data.prices_commitment.prices_commitment),
+            )?;
             expected_prices_commitment.enforce_equal(cs, &prices_commitment)?;
         }
 

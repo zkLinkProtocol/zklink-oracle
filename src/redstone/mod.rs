@@ -27,13 +27,13 @@ use bigdecimal::num_traits::FromBytes;
 use num_bigint::BigUint;
 
 use crate::{
-    fr_from_biguint,
     gadgets::{
         ethereum::Address,
         poseidon::{circuit_poseidon_hash, poseidon_hash},
         rescue::circuit_rescue_hash,
     },
-    utils, PricesCommitment, PublicInputData,
+    utils::{self, fr_from_biguint},
+    witness::{PricesCommitment, PublicInputData},
 };
 
 use self::{circuit::AllocatedSignedPrice, witness::DataPackage};
@@ -131,8 +131,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
             poseidon_hash::<E>(&input)
         };
 
-        let earliest_publish_time =
-            fr_from_biguint::<E>(&BigUint::from(earliest_publish_time))?;
+        let earliest_publish_time = fr_from_biguint::<E>(&BigUint::from(earliest_publish_time))?;
 
         let prices_num = E::Fr::from_str(&prices_commitments.len().to_string()).unwrap();
         let mut prices_commitment_base_sum = E::Fr::zero();
@@ -287,7 +286,10 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
             prices_commitment = prices_commitment.add(cs, &x)?;
         }
 
-        let expected_prices_commitment = Num::alloc(cs, Some(self.public_input_data.prices_commitment.prices_commitment))?;
+        let expected_prices_commitment = Num::alloc(
+            cs,
+            Some(self.public_input_data.prices_commitment.prices_commitment),
+        )?;
         expected_prices_commitment.enforce_equal(cs, &prices_commitment)?;
 
         let prices_num = Num::Constant(E::Fr::from_str(&prices_num.to_string()).unwrap());

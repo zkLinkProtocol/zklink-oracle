@@ -1,3 +1,4 @@
+use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 use advanced_circuit_component::{
     circuit_structures::byte::Byte,
     franklin_crypto::{
@@ -7,7 +8,6 @@ use advanced_circuit_component::{
     traits::CSAllocatable,
     vm::primitives::uint256::UInt256,
 };
-use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 
 use crate::{
     gadgets::{
@@ -263,10 +263,10 @@ mod tests {
         gadgets::keccak160,
         utils::testing::{bytes_assert_eq, create_test_constraint_system},
     };
+    use advanced_circuit_component::franklin_crypto::bellman::pairing::bn256::Bn256;
     use advanced_circuit_component::franklin_crypto::{
         bellman::SynthesisError, plonk::circuit::boolean::Boolean,
     };
-    use advanced_circuit_component::franklin_crypto::bellman::pairing::bn256::Bn256;
     use pythnet_sdk::wire::from_slice;
 
     #[test]

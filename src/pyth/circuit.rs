@@ -186,8 +186,8 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
 
         let commitment = poseidon_hash::<E>(&[
             guardian_set_hash,
-            prices_commitment,
             earliest_publish_time,
+            prices_commitment,
             prices_num,
             prices_commitment_base_sum,
         ]);

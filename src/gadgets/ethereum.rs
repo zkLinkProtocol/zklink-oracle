@@ -1,7 +1,8 @@
 use core::fmt;
 
+use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 use advanced_circuit_component::{
-    circuit_structures::byte::Byte,
+    circuit_structures::byte::{Byte, IntoBytes},
     franklin_crypto::{
         bellman::{plonk::better_better_cs::cs::ConstraintSystem, SynthesisError},
         plonk::circuit::boolean::Boolean,
@@ -10,7 +11,6 @@ use advanced_circuit_component::{
 };
 use num::traits::{FromBytes, ToBytes};
 use num_bigint::BigUint;
-use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 
 use crate::utils::{self, new_synthesis_error};
 
@@ -54,6 +54,15 @@ impl<E: Engine> Address<E> {
         chunks_be_arr[12..].copy_from_slice(&bytes[..]);
         let uint256 = utils::uint256_from_bytes(cs, &chunks_be_arr)?;
         Ok(Self(uint256))
+    }
+
+    pub fn to_bytes<CS: ConstraintSystem<E>>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<[Byte<E>; 20], SynthesisError> {
+        let mut bytes = [Byte::zero(); 20];
+        bytes[0..].copy_from_slice(&self.0.into_be_bytes(cs)?[12..]);
+        Ok(bytes)
     }
 
     /// Create address from public key x and y coordinates.
@@ -162,6 +171,23 @@ mod tests {
         )?;
         let is_equal = addr1.equals(cs, &addr2)?;
         Boolean::enforce_equal(cs, &is_equal, &Boolean::constant(true))?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_address_bytes() -> Result<(), SynthesisError> {
+        let cs = &mut create_test_constraint_system()?;
+        let bytes: [u8; 20] = hex::decode("58cc3ae5c097b213ce3c81979e1b9f9570746aa5")
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let bytes = bytes.map(|b| Byte::from_u8_witness(cs, Some(b)).unwrap());
+        let addr = Address::from_bytes(cs, &bytes)?;
+        let bytes2 = addr.to_bytes(cs)?;
+        for (a, b) in bytes.iter().zip(bytes2.iter()) {
+            assert_eq!(a.get_byte_value(), b.get_byte_value())
+        }
+
         Ok(())
     }
 }

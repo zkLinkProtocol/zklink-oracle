@@ -2386,6 +2386,7 @@ dependencies = [
  "derivative",
  "hex",
  "k256 0.13.3",
+ "lazy_static",
  "num",
  "num-bigint 0.4.4",
  "pythnet-sdk",

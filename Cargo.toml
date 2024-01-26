@@ -32,6 +32,7 @@ secp256k1 = { version = "0.28.1", features = [
 derivative = { version = "2.2.0" }
 cs_derive = { git = "https://github.com/zkLinkProtocol/advanced-circuit-component.git", branch = "main" }
 cs_derive_traits = { git = "https://github.com/zkLinkProtocol/advanced-circuit-component.git", branch = "main" }
+lazy_static = "1.4.0"
 
 # Wormhole uses patching to resolve some of its own dependencies. We need to
 # make sure that we use the same patch instead of simply pointing the original

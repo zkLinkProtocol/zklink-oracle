@@ -8,7 +8,9 @@ edition = "2021"
 [dependencies]
 hex = "0.4.3"
 num-bigint = "0.4.4"
-advanced_circuit_component = { git = "https://github.com/zkLinkProtocol/advanced-circuit-component", branch = "main", features = ["external_testing"] }
+advanced_circuit_component = { git = "https://github.com/zkLinkProtocol/advanced-circuit-component", branch = "main", features = [
+  "external_testing",
+] }
 base64 = "0.21.5"
 wormhole-sdk = { git = "https://github.com/wormhole-foundation/wormhole", tag = "v2.17.1" }
 serde_wormhole = { git = "https://github.com/wormhole-foundation/wormhole", tag = "v2.17.1" }
@@ -27,6 +29,9 @@ secp256k1 = { version = "0.28.1", features = [
   "recovery",
 ] }
 
+derivative = { version = "2.2.0" }
+cs_derive = { git = "https://github.com/zkLinkProtocol/advanced-circuit-component.git", branch = "main" }
+cs_derive_traits = { git = "https://github.com/zkLinkProtocol/advanced-circuit-component.git", branch = "main" }
 
 # Wormhole uses patching to resolve some of its own dependencies. We need to
 # make sure that we use the same patch instead of simply pointing the original

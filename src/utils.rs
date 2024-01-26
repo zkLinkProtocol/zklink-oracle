@@ -3,6 +3,8 @@ use crate::franklin_crypto::bellman::plonk::better_better_cs::cs::{
 };
 use crate::franklin_crypto::plonk::circuit::tables::inscribe_default_range_table_for_bit_width_over_first_three_columns;
 use advanced_circuit_component::circuit_structures::byte::Byte;
+use advanced_circuit_component::franklin_crypto::bellman::pairing::ff::{PrimeField, ScalarEngine};
+use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 use advanced_circuit_component::franklin_crypto::bellman::SynthesisError;
 use advanced_circuit_component::franklin_crypto::plonk::circuit::boolean::Boolean;
 use advanced_circuit_component::traits::CSAllocatable;
@@ -15,8 +17,6 @@ use advanced_circuit_component::{
     vm::primitives::uint256::UInt256,
 };
 use num_bigint::BigUint;
-use advanced_circuit_component::franklin_crypto::bellman::pairing::ff::{PrimeField, ScalarEngine};
-use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 use std::str::FromStr;
 
 pub fn new_synthesis_error<T: ToString>(msg: T) -> SynthesisError {
@@ -84,6 +84,16 @@ pub fn uint256_from_repr_witness<E: Engine, CS: ConstraintSystem<E>>(
     Ok(uint256_and_num_from_repr_witness(cs, repr)?.0)
 }
 
+pub fn fr_from_biguint<E: Engine>(biguint: &BigUint) -> Result<E::Fr, SynthesisError> {
+    let biguint = biguint.to_str_radix(10);
+    E::Fr::from_str(&biguint).ok_or_else(|| {
+        new_synthesis_error(format!(
+            "failed to convert old_prices_commitment {} to field element",
+            biguint
+        ))
+    })
+}
+
 pub fn add_bitwise_logic_and_range_table<E: Engine, CS: ConstraintSystem<E>>(
     cs: &mut CS,
 ) -> Result<(), SynthesisError> {
@@ -110,6 +120,7 @@ pub fn add_bitwise_logic_and_range_table<E: Engine, CS: ConstraintSystem<E>>(
 
 #[cfg(test)]
 pub mod testing {
+    use advanced_circuit_component::franklin_crypto::bellman::pairing::{bn256::Bn256, Engine};
     use advanced_circuit_component::{
         circuit_structures::byte::Byte,
         franklin_crypto::bellman::{
@@ -120,7 +131,6 @@ pub mod testing {
             SynthesisError,
         },
     };
-    use advanced_circuit_component::franklin_crypto::bellman::pairing::{bn256::Bn256, Engine};
 
     pub fn bytes_assert_eq<E: Engine, T: ToString>(bytes: &[Byte<E>], expected_hex: T) {
         let bytes = bytes

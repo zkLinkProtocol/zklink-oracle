@@ -1589,7 +1589,7 @@ dependencies = [
 [[package]]
 name = "pythnet-sdk"
 version = "2.0.0"
-source = "git+https://github.com/pyth-network/pyth-crosschain#6917c84b0e8f576be4b4a1c52a65478baee1144f"
+source = "git+https://github.com/pyth-network/pyth-crosschain#e1db4aad65ba0faf4035f0c468c02c921792d9c8"
 dependencies = [
  "bincode",
  "borsh",
@@ -1709,9 +1709,9 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.4.4"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b7fa1134405e2ec9353fd416b17f8dacd46c473d7d3fd1cf202706a14eb792a"
+checksum = "5bb987efffd3c6d0d8f5f89510bb458559eab11e4f869acb20bf845e016259cd"
 dependencies = [
  "aho-corasick",
  "memchr",

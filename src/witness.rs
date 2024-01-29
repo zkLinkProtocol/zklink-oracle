@@ -40,7 +40,7 @@ pub struct PricesCommitment<E: Engine> {
 pub struct OracleOutputData<E: Engine> {
     pub guardian_set_hash: Num<E>,
     pub earliest_publish_time: Num<E>,
-    pub prices_commitment: OraclePricesCommitment<E>,
+    pub price_summarize: OraclePriceSummarize<E>,
 }
 
 impl<E: Engine> CircuitEmpty<E> for OracleOutputData<E> {
@@ -48,7 +48,7 @@ impl<E: Engine> CircuitEmpty<E> for OracleOutputData<E> {
         Self {
             guardian_set_hash: Num::zero(),
             earliest_publish_time: Num::zero(),
-            prices_commitment: CircuitEmpty::empty(),
+            price_summarize: CircuitEmpty::empty(),
         }
     }
 }
@@ -65,18 +65,18 @@ impl<E: Engine> CircuitEmpty<E> for OracleOutputData<E> {
     CSVariableLengthEncodable,
 )]
 #[derivative(Clone, Debug)]
-pub struct OraclePricesCommitment<E: Engine> {
-    pub prices_commitment: Num<E>,
-    pub prices_num: Num<E>,
-    pub prices_commitment_base_sum: Num<E>, // public input
+pub struct OraclePriceSummarize<E: Engine> {
+    pub commitment: Num<E>,
+    pub num: Num<E>,
+    pub commitment_base_sum: Num<E>, // public input
 }
 
-impl<E: Engine> CircuitEmpty<E> for OraclePricesCommitment<E> {
+impl<E: Engine> CircuitEmpty<E> for OraclePriceSummarize<E> {
     fn empty() -> Self {
         Self {
-            prices_commitment: Num::zero(),
-            prices_num: Num::zero(),
-            prices_commitment_base_sum: Num::zero(),
+            commitment: Num::zero(),
+            num: Num::zero(),
+            commitment_base_sum: Num::zero(),
         }
     }
 }

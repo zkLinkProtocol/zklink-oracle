@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 pub struct PublicInputData<E: Engine> {
     pub guardian_set_hash: E::Fr,
     pub earliest_publish_time: E::Fr,
-    pub prices_commitment: PricesSummarize<E>,
+    pub prices_summarize: PricesSummarize<E>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -22,7 +22,7 @@ pub struct PublicInputData<E: Engine> {
 pub struct PricesSummarize<E: Engine> {
     pub commitment: E::Fr,
     pub num: E::Fr,
-    pub base_sum: E::Fr,
+    pub commitment_base_sum: E::Fr,
 }
 
 #[derive(
@@ -40,7 +40,7 @@ pub struct PricesSummarize<E: Engine> {
 pub struct OracleOutputData<E: Engine> {
     pub guardian_set_hash: Num<E>,
     pub earliest_publish_time: Num<E>,
-    pub price_summarize: OraclePriceSummarize<E>,
+    pub prices_summarize: OraclePricesSummarize<E>,
 }
 
 impl<E: Engine> CircuitEmpty<E> for OracleOutputData<E> {
@@ -48,7 +48,7 @@ impl<E: Engine> CircuitEmpty<E> for OracleOutputData<E> {
         Self {
             guardian_set_hash: Num::zero(),
             earliest_publish_time: Num::zero(),
-            price_summarize: CircuitEmpty::empty(),
+            prices_summarize: CircuitEmpty::empty(),
         }
     }
 }
@@ -65,13 +65,13 @@ impl<E: Engine> CircuitEmpty<E> for OracleOutputData<E> {
     CSVariableLengthEncodable,
 )]
 #[derivative(Clone, Debug)]
-pub struct OraclePriceSummarize<E: Engine> {
+pub struct OraclePricesSummarize<E: Engine> {
     pub commitment: Num<E>,
     pub num: Num<E>,
     pub commitment_base_sum: Num<E>, // public input
 }
 
-impl<E: Engine> CircuitEmpty<E> for OraclePriceSummarize<E> {
+impl<E: Engine> CircuitEmpty<E> for OraclePricesSummarize<E> {
     fn empty() -> Self {
         Self {
             commitment: Num::zero(),

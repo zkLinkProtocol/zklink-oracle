@@ -155,10 +155,10 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
             commitment,
             public_input_data: PublicInputData {
                 guardian_set_hash,
-                prices_commitment: PricesSummarize {
+                prices_summarize: PricesSummarize {
                     commitment: prices_commitment,
                     num: prices_num,
-                    base_sum: prices_commitment_base_sum,
+                    commitment_base_sum: prices_commitment_base_sum,
                 },
                 earliest_publish_time,
             },
@@ -286,10 +286,8 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
             prices_commitment = prices_commitment.add(cs, &x)?;
         }
 
-        let expected_prices_commitment = Num::alloc(
-            cs,
-            Some(self.public_input_data.prices_commitment.commitment),
-        )?;
+        let expected_prices_commitment =
+            Num::alloc(cs, Some(self.public_input_data.prices_summarize.commitment))?;
         expected_prices_commitment.enforce_equal(cs, &prices_commitment)?;
 
         let prices_num = Num::Constant(E::Fr::from_str(&prices_num.to_string()).unwrap());

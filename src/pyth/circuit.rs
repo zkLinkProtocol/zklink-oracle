@@ -38,7 +38,7 @@ use crate::{
     },
     pyth::{PriceUpdate, PriceUpdates, Vaa},
     utils::{fr_from_biguint, new_synthesis_error},
-    witness::{PricesCommitment, PublicInputData},
+    witness::{PricesSummarize, PublicInputData},
 };
 
 pub use pythnet_sdk;
@@ -176,7 +176,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
         let mut prices_num = E::Fr::zero();
         let mut prices_commitment_base_sum = E::Fr::zero();
         let mut prices_commitment = E::Fr::zero();
-        for (i, mut commitment) in prices_commitments.into_iter().enumerate() {
+        for mut commitment in prices_commitments.into_iter() {
             Field::add_assign(&mut prices_commitment_base_sum, &commitment);
             Field::add_assign(&mut prices_num, &E::Fr::one());
             Field::mul_assign(&mut commitment, &prices_num);
@@ -197,10 +197,10 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
             commitment,
             public_input_data: PublicInputData {
                 guardian_set_hash,
-                prices_commitment: PricesCommitment {
-                    prices_commitment,
-                    prices_num,
-                    prices_commitment_base_sum,
+                prices_commitment: PricesSummarize {
+                    commitment: prices_commitment,
+                    num: prices_num,
+                    base_sum: prices_commitment_base_sum,
                 },
                 earliest_publish_time,
             },
@@ -403,7 +403,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
         {
             let expected_prices_commitment = Num::alloc(
                 cs,
-                Some(self.public_input_data.prices_commitment.prices_commitment),
+                Some(self.public_input_data.prices_commitment.commitment),
             )?;
             expected_prices_commitment.enforce_equal(cs, &prices_commitment)?;
         }

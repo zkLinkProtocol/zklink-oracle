@@ -14,15 +14,15 @@ use serde::{Deserialize, Serialize};
 pub struct PublicInputData<E: Engine> {
     pub guardian_set_hash: E::Fr,
     pub earliest_publish_time: E::Fr,
-    pub prices_commitment: PricesCommitment<E>,
+    pub prices_commitment: PricesSummarize<E>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(bound = "")]
-pub struct PricesCommitment<E: Engine> {
-    pub prices_commitment: E::Fr,
-    pub prices_num: E::Fr,
-    pub prices_commitment_base_sum: E::Fr,
+pub struct PricesSummarize<E: Engine> {
+    pub commitment: E::Fr,
+    pub num: E::Fr,
+    pub base_sum: E::Fr,
 }
 
 #[derive(

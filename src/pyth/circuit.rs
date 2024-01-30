@@ -38,7 +38,7 @@ use crate::{
     },
     pyth::{PriceUpdate, PriceUpdates, Vaa},
     utils::{fr_from_biguint, new_synthesis_error},
-    witness::{PricesCommitment, PublicInputData},
+    witness::{PricesSummarize, PublicInputData},
 };
 
 pub use pythnet_sdk;
@@ -176,12 +176,11 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
         let mut prices_num = E::Fr::zero();
         let mut prices_commitment_base_sum = E::Fr::zero();
         let mut prices_commitment = E::Fr::zero();
-        for (i, mut commitment) in prices_commitments.into_iter().enumerate() {
+        for mut commitment in prices_commitments.into_iter() {
             Field::add_assign(&mut prices_commitment_base_sum, &commitment);
-            let coef = E::Fr::from_str(&i.to_string()).unwrap();
-            Field::mul_assign(&mut commitment, &coef);
-            Field::add_assign(&mut prices_commitment, &commitment);
             Field::add_assign(&mut prices_num, &E::Fr::one());
+            Field::mul_assign(&mut commitment, &prices_num);
+            Field::add_assign(&mut prices_commitment, &commitment);
         }
 
         let commitment = poseidon_hash::<E>(&[
@@ -198,10 +197,10 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
             commitment,
             public_input_data: PublicInputData {
                 guardian_set_hash,
-                prices_commitment: PricesCommitment {
-                    prices_commitment,
-                    prices_num,
-                    prices_commitment_base_sum,
+                prices_commitment: PricesSummarize {
+                    commitment: prices_commitment,
+                    num: prices_num,
+                    base_sum: prices_commitment_base_sum,
                 },
                 earliest_publish_time,
             },
@@ -393,23 +392,21 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
 
         let mut prices_commitment_base_sum = Num::zero();
         let mut prices_commitment = Num::zero();
-        let prices_num = prices_commitments.len();
-        for (i, commitment) in prices_commitments.into_iter().enumerate() {
+        let mut prices_num = Num::zero();
+        for commitment in prices_commitments.into_iter() {
             prices_commitment_base_sum = prices_commitment_base_sum.add(cs, &commitment)?;
-            let coef = E::Fr::from_str(&format!("{}", i)).unwrap();
-            let x = commitment.mul(cs, &Num::Constant(coef))?;
-            prices_commitment = prices_commitment.add(cs, &x)?;
+            prices_num = prices_num.add(cs, &Num::one())?;
+            let appended = commitment.mul(cs, &prices_num)?;
+            prices_commitment = prices_commitment.add(cs, &appended)?;
         }
 
         {
             let expected_prices_commitment = Num::alloc(
                 cs,
-                Some(self.public_input_data.prices_commitment.prices_commitment),
+                Some(self.public_input_data.prices_commitment.commitment),
             )?;
             expected_prices_commitment.enforce_equal(cs, &prices_commitment)?;
         }
-
-        let prices_num = Num::Constant(E::Fr::from_str(&prices_num.to_string()).unwrap());
 
         // Compute guardian set hash
         let guardian_set_num = guardian_set
@@ -475,7 +472,7 @@ mod tests {
     fn test_price_oracle() -> Result<(), anyhow::Error> {
         let accumulator_update_data = {
             // base64 encoded hex from hermes API /api/latest_vaas (https://hermes.pyth.network/docs/#/rest/latest_vaas)
-            let hex = "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";
+            let hex = "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";
             let bytes = base64::engine::general_purpose::STANDARD.decode(hex)?;
             AccumulatorUpdateData::try_from_slice(bytes.as_ref())?
         };
@@ -503,7 +500,7 @@ mod tests {
         .iter()
         .map(|guardian| hex::decode(guardian).unwrap().try_into().unwrap())
         .collect();
-        let price_oracle = PriceOracle::<Bn256, 1, 4>::new(
+        let price_oracle = PriceOracle::<Bn256, 1, 3>::new(
             vec![accumulator_update_data.clone(), accumulator_update_data],
             guardian_set,
         )?;

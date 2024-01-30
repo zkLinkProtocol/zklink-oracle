@@ -33,7 +33,7 @@ use crate::{
         rescue::circuit_rescue_hash,
     },
     utils::{self, fr_from_biguint},
-    witness::{PricesCommitment, PublicInputData},
+    witness::{PricesSummarize, PublicInputData},
 };
 
 use self::{circuit::AllocatedSignedPrice, witness::DataPackage};
@@ -155,10 +155,10 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
             commitment,
             public_input_data: PublicInputData {
                 guardian_set_hash,
-                prices_commitment: PricesCommitment {
-                    prices_commitment,
-                    prices_num,
-                    prices_commitment_base_sum,
+                prices_commitment: PricesSummarize {
+                    commitment: prices_commitment,
+                    num: prices_num,
+                    base_sum: prices_commitment_base_sum,
                 },
                 earliest_publish_time,
             },
@@ -288,7 +288,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
 
         let expected_prices_commitment = Num::alloc(
             cs,
-            Some(self.public_input_data.prices_commitment.prices_commitment),
+            Some(self.public_input_data.prices_commitment.commitment),
         )?;
         expected_prices_commitment.enforce_equal(cs, &prices_commitment)?;
 

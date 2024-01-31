@@ -90,7 +90,8 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
                         NUM_SIGNATURES_TO_VERIFY
                     )
                 }
-                for signature in header.signatures {
+                for i in 0..NUM_SIGNATURES_TO_VERIFY {
+                    let signature = header.signatures[i];
                     let recid = RecoveryId::from_i32(signature.signature[64].into())?;
                     let pubkey: &[u8; 65] = &secp
                         .recover_ecdsa(

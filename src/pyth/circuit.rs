@@ -49,23 +49,21 @@ use crate::gadgets::rescue::circuit_rescue_hash;
 pub use advanced_circuit_component::franklin_crypto;
 use crate::franklin_crypto::bellman::plonk::better_better_cs::gates::selector_optimized_with_d_next::SelectorOptimizedWidth4MainGateWithDNext;
 
-pub const NUM_SIGNATURES_TO_VERIFY: usize = 12;
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(bound = "")]
-pub struct PriceOracle<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICE: usize> {
+pub struct PriceOracle<E: Engine, const NUM_PRICES: usize> {
     pub accumulator_update_data: Vec<AccumulatorUpdateData>,
     pub guardian_set: Vec<[u8; 20]>,
     pub public_input_data: PublicInputData<E>,
     pub commitment: E::Fr,
+    pub num_signature_to_verify: usize,
 }
 
-impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
-    PriceOracle<E, NUM_SIGNATURES_TO_VERIFY, NUM_PRICES>
-{
+impl<E: Engine, const NUM_PRICES: usize> PriceOracle<E, NUM_PRICES> {
     pub fn new(
         accumulator_update_data: Vec<AccumulatorUpdateData>,
         guardian_set: Vec<[u8; 20]>,
+        num_signature_to_verify: usize,
     ) -> Result<Self, anyhow::Error> {
         let mut last_publish_time = 0;
         let mut earliest_publish_time = 0;
@@ -83,14 +81,14 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
             {
                 let (header, body): (Header, Body<&RawMessage>) = vaa.clone().into();
                 let digest = body.digest()?;
-                if header.signatures.len() < NUM_SIGNATURES_TO_VERIFY {
+                if header.signatures.len() < num_signature_to_verify {
                     anyhow::bail!(
                         "got {} signatures which is less than {}",
                         header.signatures.len(),
-                        NUM_SIGNATURES_TO_VERIFY
+                        num_signature_to_verify
                     )
                 }
-                for i in 0..NUM_SIGNATURES_TO_VERIFY {
+                for i in 0..num_signature_to_verify {
                     let signature = header.signatures[i];
                     let recid = RecoveryId::from_i32(signature.signature[64].into())?;
                     let pubkey: &[u8; 65] = &secp
@@ -205,10 +203,14 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
                 },
                 earliest_publish_time,
             },
+            num_signature_to_verify,
         })
     }
 
-    pub fn circuit_default(num_accumulator_update_dara: usize) -> Self {
+    pub fn circuit_default(
+        num_accumulator_update_dara: usize,
+        num_signature_to_verify: usize,
+    ) -> Self {
         let accumulator_update_data = {
             // base64 encoded hex from hermes API /api/latest_vaas (https://hermes.pyth.network/docs/#/rest/latest_vaas)
             let hex = "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";
@@ -245,7 +247,12 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
         .iter()
         .map(|guardian| hex::decode(guardian).unwrap().try_into().unwrap())
         .collect();
-        Self::new(accumulator_update_data, guardian_set).unwrap()
+        Self::new(
+            accumulator_update_data,
+            guardian_set,
+            num_signature_to_verify,
+        )
+        .unwrap()
     }
 
     pub fn public_input_data(&self) -> PublicInputData<E> {
@@ -257,9 +264,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize>
     }
 }
 
-impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> Circuit<E>
-    for PriceOracle<E, NUM_SIGNATURES_TO_VERIFY, NUM_PRICES>
-{
+impl<E: Engine, const NUM_PRICES: usize> Circuit<E> for PriceOracle<E, NUM_PRICES> {
     type MainGate = SelectorOptimizedWidth4MainGateWithDNext;
 
     fn synthesize<CS: ConstraintSystem<E>>(&self, cs: &mut CS) -> Result<(), SynthesisError> {
@@ -280,7 +285,7 @@ impl<E: Engine, const NUM_SIGNATURES_TO_VERIFY: usize, const NUM_PRICES: usize> 
             let vaa = {
                 let vaa: wormhole_sdk::Vaa<&serde_wormhole::RawMessage> =
                     serde_wormhole::from_slice(vaa.as_ref()).unwrap();
-                Vaa::<_, NUM_SIGNATURES_TO_VERIFY>::from_vaa_witness(cs, vaa)?
+                Vaa::<_>::from_vaa_witness(cs, vaa, self.num_signature_to_verify)?
             };
             let price_updates: [_; NUM_PRICES] = {
                 let updates = updates
@@ -499,9 +504,10 @@ mod tests {
         .iter()
         .map(|guardian| hex::decode(guardian).unwrap().try_into().unwrap())
         .collect();
-        let price_oracle = PriceOracle::<Bn256, 1, 3>::new(
+        let price_oracle = PriceOracle::<Bn256, 3>::new(
             vec![accumulator_update_data.clone(), accumulator_update_data],
             guardian_set,
+            1,
         )?;
         let (mut cs, _, _) = create_test_artifacts_with_optimized_gate();
         price_oracle.synthesize(&mut cs)?;

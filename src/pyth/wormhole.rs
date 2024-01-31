@@ -1,3 +1,4 @@
+use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 use advanced_circuit_component::{
     circuit_structures::byte::{Byte, IntoBytes as _},
     franklin_crypto::{
@@ -10,7 +11,6 @@ use advanced_circuit_component::{
         primitives::uint256::UInt256,
     },
 };
-use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 
 use crate::{
     gadgets::{
@@ -125,7 +125,8 @@ impl<E: Engine, const N: usize> Vaa<E, N> {
             return Ok(Boolean::Constant(false));
         }
         let recovered = self.ecrecover(cs)?;
-        let mut is_ok = vec![];
+        // Add a true bool to avoid panic if no signatures need to check
+        let mut is_ok = vec![Boolean::constant(true)];
         let mut guardian_used = vec![];
         for _ in 0..guardian_set.len() {
             guardian_used.push(Boolean::alloc_from_witness(cs, Some(false))?);
@@ -318,6 +319,7 @@ impl<E: Engine> VaaPayload<E> {
 
 #[cfg(test)]
 mod tests {
+    use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
     use advanced_circuit_component::{
         franklin_crypto::{
             bellman::{plonk::better_better_cs::cs::ConstraintSystem, SynthesisError},
@@ -325,7 +327,6 @@ mod tests {
         },
         vm::primitives::uint256::UInt256,
     };
-    use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 
     use crate::utils::{
         new_synthesis_error,

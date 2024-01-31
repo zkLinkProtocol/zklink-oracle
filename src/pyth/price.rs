@@ -86,12 +86,12 @@ impl<E: Engine, const N: usize> PriceUpdate<E, N> {
 ///
 /// Visit [here](https://github.com/pyth-network/pyth-client-py/blob/d6571704433f044dfa6881e7b76f629f6e194482/pythclient/price_feeds.py#L710-L804) to see the deserializing way of [`AccumulatorUpdateData`](https://github.com/pyth-network/pyth-crosschain/blob/178ad4cb0edff38f43d8e26f23d1d9e83448093c/pythnet/pythnet_sdk/src/wire.rs#L55-L66).
 #[derive(Debug, Clone)]
-pub struct PriceUpdates<E: Engine, const N1: usize, const N2: usize, const N3: usize> {
-    pub vaa: Vaa<E, N3>,
+pub struct PriceUpdates<E: Engine, const N1: usize, const N2: usize> {
+    pub vaa: Vaa<E>,
     pub price_updates: [PriceUpdate<E, N2>; N1],
 }
 
-impl<E: Engine, const N1: usize, const N2: usize, const N3: usize> PriceUpdates<E, N1, N2, N3> {
+impl<E: Engine, const N1: usize, const N2: usize> PriceUpdates<E, N1, N2> {
     /// Check if the price updates and VAA are valid.
     pub fn check_by_pubkey<CS: ConstraintSystem<E>>(
         &self,

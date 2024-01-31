@@ -1,3 +1,4 @@
+use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 use advanced_circuit_component::{
     circuit_structures::byte::{Byte, IntoBytes as _},
     franklin_crypto::{
@@ -10,7 +11,6 @@ use advanced_circuit_component::{
         primitives::uint256::UInt256,
     },
 };
-use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 
 use crate::{
     gadgets::{
@@ -25,30 +25,29 @@ use crate::{
 ///
 /// Visit [VAAs documentation](https://docs.wormhole.com/wormhole/explore-wormhole/vaa) for more.
 #[derive(Debug, Clone)]
-pub struct Vaa<E: Engine, const N: usize> {
-    pub signatures: [Signature<E>; N],
+pub struct Vaa<E: Engine> {
+    pub signatures: Vec<Signature<E>>,
     pub body: VaaBody<E>,
 }
 
-impl<E: Engine, const N: usize> Vaa<E, N> {
-    /// Create VAA from witness. Size of signatures in witness must be at least N, otherwise it
-    /// returns error.
+impl<E: Engine> Vaa<E> {
     pub fn from_vaa_witness<CS: ConstraintSystem<E>>(
         cs: &mut CS,
         message: wormhole_sdk::Vaa<&serde_wormhole::RawMessage>,
+        num_signatures: usize,
     ) -> Result<Self, SynthesisError> {
         let (header, body): (wormhole_sdk::vaa::Header, wormhole_sdk::vaa::Body<_>) =
             message.into();
         let body = VaaBody::from_vaa_body_witness(cs, body)?;
-        if header.signatures.len() < N {
+        if header.signatures.len() < num_signatures {
             return Err(new_synthesis_error(format!(
                 "Only have {} signature. expect {} at least",
                 header.signatures.len(),
-                N
+                num_signatures
             )));
         }
 
-        let signatures = (0..N)
+        let signatures = (0..num_signatures)
             .map(|i| {
                 let signature = header.signatures[i].signature;
                 Signature::from_bytes_witness(cs, &signature)
@@ -65,7 +64,7 @@ impl<E: Engine, const N: usize> Vaa<E, N> {
         &self.body.payload.root
     }
 
-    pub fn signatures(&self) -> &[Signature<E>; N] {
+    pub fn signatures(&self) -> &[Signature<E>] {
         &self.signatures
     }
 
@@ -73,7 +72,7 @@ impl<E: Engine, const N: usize> Vaa<E, N> {
     pub fn ecrecover<CS: ConstraintSystem<E>>(
         &self,
         cs: &mut CS,
-    ) -> Result<[crate::gadgets::ecdsa::EcRecoverRes<E>; N], SynthesisError> {
+    ) -> Result<Vec<crate::gadgets::ecdsa::EcRecoverRes<E>>, SynthesisError> {
         let msg_hash = {
             let bytes = self.body.to_bytes();
             use crate::gadgets::keccak256::digest;
@@ -82,11 +81,10 @@ impl<E: Engine, const N: usize> Vaa<E, N> {
             UInt256::from_be_bytes_fixed(cs, &hash2)?
         };
 
-        let mut pubkeys = [Default::default(); N];
-        for (i, pubkey) in pubkeys.iter_mut().enumerate().take(self.signatures.len()) {
-            *pubkey = self.signatures[i].ecrecover(cs, &msg_hash)?;
-        }
-        Ok(pubkeys)
+        self.signatures
+            .iter()
+            .map(|signature| signature.ecrecover(cs, &msg_hash))
+            .collect::<Result<Vec<_>, _>>()
     }
 
     /// Check if all VAA sigantures are signed by one from guardian set.
@@ -125,7 +123,8 @@ impl<E: Engine, const N: usize> Vaa<E, N> {
             return Ok(Boolean::Constant(false));
         }
         let recovered = self.ecrecover(cs)?;
-        let mut is_ok = vec![];
+        // Add a true bool to avoid panic if no signatures need to check
+        let mut is_ok = vec![Boolean::constant(true)];
         let mut guardian_used = vec![];
         for _ in 0..guardian_set.len() {
             guardian_used.push(Boolean::alloc_from_witness(cs, Some(false))?);
@@ -318,6 +317,7 @@ impl<E: Engine> VaaPayload<E> {
 
 #[cfg(test)]
 mod tests {
+    use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
     use advanced_circuit_component::{
         franklin_crypto::{
             bellman::{plonk::better_better_cs::cs::ConstraintSystem, SynthesisError},
@@ -325,7 +325,6 @@ mod tests {
         },
         vm::primitives::uint256::UInt256,
     };
-    use advanced_circuit_component::franklin_crypto::bellman::pairing::Engine;
 
     use crate::utils::{
         new_synthesis_error,
@@ -338,7 +337,7 @@ mod tests {
         let cs = &mut create_test_constraint_system()?;
         let hex_str = "415557560000000000069b993c00002710095bb7e5fa374ea08603a6698123d99101547a50";
         let data = hex::decode(hex_str).unwrap();
-        let payload = pythnet_sdk::wire::v1::WormholeMessage::try_from_bytes(&data).unwrap();
+        let payload = pythnet_sdk::wire::v1::WormholeMessage::try_from_bytes(data).unwrap();
         let payload = super::VaaPayload::<_>::from_wormhole_message_witness(cs, payload)?;
         bytes_assert_eq(&payload.to_bytes(), hex_str);
         Ok(())
@@ -365,7 +364,7 @@ mod tests {
             serde_wormhole::from_slice(&data).unwrap();
         // We can safely create Vaa with signatures less than len of witness VAA.
         assert_eq!(vaa.signatures.len(), 13);
-        let vaa = super::Vaa::<_, 1>::from_vaa_witness(cs, vaa.clone())?;
+        let vaa = super::Vaa::<_>::from_vaa_witness(cs, vaa.clone(), 1)?;
 
         let guardian_set = {
             let pubkeys = [
